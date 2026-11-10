@@ -7,7 +7,9 @@ Feature: SZ-008 Zoom works over full-screen apps
   that moves every frame, as a game or a video keeps drawing. Four notches turned quickly
   zoom past 1.2 to the fourth, 2.07x, since a fast spin zooms further (SZ-002). Sharp text
   has at most two thirds of the in-between pixels GNOME's own scaling leaves, the mark
-  SZ-004 sets for text. The bar moves 0.4 pixels a millisecond, about 360 pixels of the
+  SZ-004 sets for text; and it matches the same text drawn by GNOME's scaling, by a
+  correlation of at least 0.8, so a zoomed view that has lost the app, blank or dark, fails.
+  Eight notches down undo four up whatever speed each spin was. The bar moves 0.4 pixels a millisecond, about 360 pixels of the
   screen in 300 ms at 3x, so a view that has stopped showing what the app draws moves it 0
   pixels and a live one at least 40.
 
@@ -15,8 +17,9 @@ Feature: SZ-008 Zoom works over full-screen apps
     Given a full-screen <kind> app
     When Super is held and the wheel turns 4 notches up
     Then zoom is on above 2x
+    And the app's zoomed text matches what GNOME's scaling shows, by a correlation of at least 0.8
     And the app's zoomed text has at most two thirds as many in-between pixels as with GNOME's scaling
-    When Super is held and the wheel turns 4 notches down
+    When Super is held and the wheel turns 8 notches down
     Then zoom is off
 
     Examples:

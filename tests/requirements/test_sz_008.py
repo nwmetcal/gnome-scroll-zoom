@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from tests.images import Box, crop, in_between_fraction, luma, viewed
+from tests.images import Box, Gray, crop, in_between_fraction, luma, viewed
 from tests.paths import ROOT
 from tests.requirements.conftest import REPAINT_S, Scene, capture, set_style, zoom_to
 from tests.shell import SCREEN, Shell, number, step
@@ -109,17 +109,43 @@ def zoom_on_bar(shell: Shell, scene: Scene, zoom: float) -> None:
     zoom_to(shell, scene, zoom, BAR_VIEW)
 
 
+def text_both_ways(shell: Shell, scene: Scene) -> tuple[Gray, Gray]:
+    """The app's text in the zoomed view, drawn sharp and by GNOME's scaling, captured once."""
+    if "standard" not in scene.captures:
+        capture(shell, scene, "sharp")
+        set_style(shell, "standard")
+        capture(shell, scene, "standard")
+        set_style(shell, "text")
+    box = viewed(TEXT, view(shell), SCREEN)
+    return crop(scene.image("sharp"), box), crop(scene.image("standard"), box)
+
+
+def correlation(a: Gray, b: Gray) -> float:
+    """How alike two images are, from -1 to 1; 0 when either is one flat tone."""
+    a, b = a - a.mean(), b - b.mean()
+    spread = float(np.sqrt((a * a).sum() * (b * b).sum()))
+    return float((a * b).sum()) / spread if spread > 0 else 0.0
+
+
+@then(
+    parsers.parse(
+        "the app's zoomed text matches what GNOME's scaling shows,"
+        " by a correlation of at least {least:g}"
+    )
+)
+def app_text_there(shell: Shell, scene: Scene, least: float) -> None:
+    sharp, standard = text_both_ways(shell, scene)
+    alike = correlation(sharp, standard)
+    assert alike >= least, f"a correlation of {alike:.3f} with GNOME's own scaling"
+
+
 @then(
     "the app's zoomed text has at most two thirds as many in-between pixels as with GNOME's scaling"
 )
 def app_text_sharp(shell: Shell, scene: Scene) -> None:
-    box = viewed(TEXT, view(shell), SCREEN)
-    capture(shell, scene, "sharp")
-    set_style(shell, "standard")
-    capture(shell, scene, "standard")
-    set_style(shell, "text")
-    sharp = in_between_fraction(crop(scene.image("sharp"), box))
-    standard = in_between_fraction(crop(scene.image("standard"), box))
+    sharp_pixels, standard_pixels = text_both_ways(shell, scene)
+    sharp = in_between_fraction(sharp_pixels)
+    standard = in_between_fraction(standard_pixels)
     assert sharp <= standard * 2 / 3, f"{sharp:.3f} in between, against GNOME's {standard:.3f}"
 
 
