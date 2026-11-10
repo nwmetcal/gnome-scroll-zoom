@@ -36,7 +36,8 @@ least, so what was in view stays close by.
 Scroll Zoom answers the calls GNOME's magnifier makes to set its zoom region's following, at
 the shell's start and on every change to GNOME's settings, with its own switches, as it already
 answers `setMagFactor`. GNOME's settings are never written, and turning the extension off hands
-them back.
+them back. This changes decision 0001, whose list of what keeps working under Scroll Zoom no
+longer names focus and caret tracking.
 
 ### Consequences
 
@@ -51,7 +52,7 @@ them back.
 
 ### Checked by
 
-SZ-009: every scenario fails if the view follows focus or the text cursor with the switches off,
+SZ-009's scenarios fail if the view follows focus or the text cursor with the switches off,
 follows further than it takes with one on, follows the other kind of move, or comes back after
 GNOME's settings change, if GNOME's settings are written, or if turning Scroll Zoom off does not
 hand GNOME's following back.

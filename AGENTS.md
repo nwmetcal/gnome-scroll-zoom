@@ -148,4 +148,4 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | A shell script passes shellcheck | `tests/style/test_shell.py` |
 | No `Any`; a function's types are complete | ruff (`ANN`, `TID251`) and pyright strict, in `make check` |
 | Steps observe what a person would, never internals; a requirement made true failed on main first; a scenario is never edited to pass; one behavior a pull request; comments say why; errors propagate | review: the requirements and rules lenses |
-| The extension hands zoom back to GNOME when turned off, and writes no setting but its own and GNOME's zoom on/off and level | SZ-006; review: the correctness lens |
+| The extension hands zoom back to GNOME when turned off, and writes no setting but its own and GNOME's zoom on/off and level | SZ-006; SZ-009, for following focus and the text cursor; review: the correctness lens |

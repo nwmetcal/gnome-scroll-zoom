@@ -1,7 +1,7 @@
 # Zoom drives GNOME's own magnifier
 
 - Status: accepted
-- Date: 2026-11-09
+- Date: 2026-11-10
 - Decided by: Nicholas Metcalf
 
 ## Context
@@ -19,7 +19,8 @@ driven by the scroll wheel, glides, and draws text sharply.
 ## Decision
 
 Drive GNOME's magnifier, because everything it already does keeps working: Super+Alt+8, the
-Settings page, focus and caret tracking, color effects, and the lock screen.
+Settings page, color effects, and the lock screen. Its following of keyboard focus and the text
+cursor goes through Scroll Zoom's own switches while Scroll Zoom is on (decision 0007).
 
 ### Consequences
 
@@ -37,5 +38,6 @@ hands the magnifier back unchanged.
 ## Reversing it
 
 A zoom of its own would need everything above rewritten: tracking, shortcuts, settings. The
-seam is that the extension touches the magnifier in two places, `RegionSmoothing` in
-`smoothing.js` and `_applyLevel` in `extension.js`.
+seam is that the extension touches the magnifier in a few places: `RegionSmoothing` in
+`smoothing.js`, and `_applyLevel`, `_routeMagFactorChanges`, and `_routeFollowing` in
+`extension.js`.

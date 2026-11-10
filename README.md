@@ -107,9 +107,9 @@ Open them from the **Extensions** app (Scroll Zoom > Settings), or run
   *Soft* (smooth everywhere), or *GNOME standard*.
 
 Everything in **Settings > Accessibility > Zoom** applies too, such as how the view
-follows the pointer, and color effects. Following keyboard focus and the text cursor is the
-exception: while Scroll Zoom is on, its own two switches decide it, and turning Scroll Zoom
-off gives GNOME's settings back.
+follows the pointer, and color effects. GNOME also has settings for following keyboard focus
+and the text cursor, which its Settings page does not show; while Scroll Zoom is on, its two
+switches take their place, and turning Scroll Zoom off brings GNOME's back.
 
 ## Questions and problems
 

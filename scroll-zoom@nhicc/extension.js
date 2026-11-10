@@ -67,8 +67,8 @@ const STYLE_MODES = {
     standard: null, // GNOME's own rendering, no shader
 };
 
-// Scroll Zoom's switches for following, the zoom region's setter each one answers for, GNOME's
-// own setting that setter is handed back when the extension is turned off, and its modes.
+// Each switch stands in for one of GNOME's own following settings, through the zoom region
+// setter GNOME calls with it, so that setting can be handed back when the extension is off.
 const FOLLOWING = [
     ['follow-focus', 'setFocusTrackingMode', 'focus-tracking',
         GDesktopEnums.MagnifierFocusTrackingMode],
@@ -148,7 +148,7 @@ export default class ScrollZoomExtension extends Extension {
         if (this._region) {
             Main.magnifier.disconnect(this._activeChangedId);
             delete this._region.setMagFactor;
-            // Hand GNOME's own following back, as its settings say.
+            // With the routing gone, the zoom region would keep Scroll Zoom's last mode.
             for (const [, method, gnomeKey] of FOLLOWING) {
                 delete this._region[method];
                 this._region[method](this._magSettings.get_enum(gnomeKey));
