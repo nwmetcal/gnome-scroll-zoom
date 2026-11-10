@@ -80,10 +80,15 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
     And its thin bars at least half inked are drawn as tall as the font draws them, within 1 pixel on average
     And its thin bars' faint ends, under half inked, are drawn as tall as the font draws them, within 1 pixel on average
 
-  Scenario: Letters stay whole
-    Given zoom is on at 6x over the test pattern's text
+  Scenario Outline: Letters stay whole
+    Given zoom is on at 6x over the test pattern's <part>
     When the zoomed screen is captured with sharp smoothing and with GNOME's standard scaling
-    Then every letter GNOME's scaling draws in one piece is drawn in one piece
+    Then every letter of the <part> GNOME's scaling draws in one piece is drawn in one piece
+
+    Examples:
+      | part       |
+      | text       |
+      | serif line |
 
   Scenario Outline: Paper away from the text stays paper, bolder or not
     Given the test pattern is captured unzoomed

@@ -207,8 +207,12 @@ def paper_stays(shell: Shell, scene: Scene, most: int) -> None:
     )
 
 
-@then("every letter GNOME's scaling draws in one piece is drawn in one piece")
-def letters_whole(shell: Shell, scene: Scene) -> None:
-    box = scene.on_screen(pattern_box(shell, "text"))
+@then(
+    parsers.parse(
+        "every letter of the {part} GNOME's scaling draws in one piece is drawn in one piece"
+    )
+)
+def letters_whole(shell: Shell, scene: Scene, part: str) -> None:
+    box = scene.on_screen(pattern_box(shell, PATTERN_PARTS[part]))
     broken = broken_pieces(crop(scene.image("standard"), box), crop(scene.image("text"), box))
     assert not broken, f"{len(broken)} letters drawn in {', '.join(map(str, broken))} pieces"
