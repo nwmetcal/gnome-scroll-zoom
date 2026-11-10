@@ -32,7 +32,8 @@ make install      # install your working copy; log out and back in to load it
 `make test-shell` starts a private, headless GNOME Shell with the extension loaded
 (`dev/test-shell.sh`). It runs on its own D-Bus session and settings, so it never touches
 your desktop. It types and scrolls through virtual input devices and checks what GNOME
-draws. Only one test shell runs at a time on a machine.
+draws. It runs Wayland apps and, through Xwayland, X11 apps, as most games are.
+Only one test shell runs at a time on a machine.
 
 ## Looking at the smoothing by eye
 

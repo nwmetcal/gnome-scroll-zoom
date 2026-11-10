@@ -81,7 +81,7 @@ gsettings set org.gnome.desktop.interface font-antialiasing rgba
 gsettings set org.gnome.desktop.interface font-hinting slight
 gsettings set org.gnome.desktop.a11y.magnifier mouse-tracking proportional
 echo \$\$ > "$ROOT/pid"
-exec gnome-shell --headless --wayland --no-x11 --wayland-display wayland-test --virtual-monitor $size
+exec gnome-shell --headless --wayland --wayland-display wayland-test --virtual-monitor $size
 EOF
     chmod +x "$ROOT/launch.sh"
     test_env setsid dbus-run-session -- "$ROOT/launch.sh" > "$ROOT/shell.log" 2>&1 &
