@@ -18,13 +18,19 @@
 //    - a straight edge across it, at the angle its coverage changes fastest,
 //      or a thin band across it where the coverage peaks in it, as a serif's
 //      hairline or a crossbar does;
-//    - or, where an upright edge and a flat one meeting at a corner explain
-//      the neighbours almost exactly and clearly better, that corner, as at
-//      a stem's end;
-//    - a pixel with no ink, or all ink, takes the edges its neighbours give.
+//    - or, where an upright edge and a flat one meeting at a corner, or an
+//      upright stroke joining a flat one, explain the neighbours almost
+//      exactly and clearly better, that corner or join, as at a stem's end or
+//      under a crossbar;
+//    - a pixel with no ink, or all ink, takes the edges its neighbours give;
+//    - with ink on both sides, the pixels two away along its row and column
+//      tell which side its ink goes on from.
 // 4. Blend the 4 shapes' distances only near the pixels' shared edges, and
 //    draw the dark tone wherever the blend says "inside", with a
 //    1-screen-pixel antialiased border.
+//    Where those shapes leave a hairline between two pixels that both carry
+//    ink, across a side or corner to corner, the stroke is joined there.
+// The edge position moves only the edges of strokes.
 // Blending each pixel's shape only with its nearest neighbours keeps a
 // stem's ends and a serif's corners square and a hairline as thin as the
 // font draws it; a stem that falls across two pixel columns as two
@@ -122,7 +128,8 @@ function generateShapes() {
     for (const j of [0, 1]) {
         for (const i of [0, 1]) {
             const row = dj => `vec3(${[-1, 0, 1].map(di => `cv[${block(i + di, j + dj)}]`).join(', ')})`;
-            // The pixels two away along the row and the column through it.
+            // The pixels two away along its row and column: whether a neighbour's
+            // far side is empty tells which side the pixel's own ink goes on from.
             const far = `vec4(cv[${block(i - 2, j)}], cv[${block(i + 2, j)}], cv[${block(i, j - 2)}], cv[${block(i, j + 2)}])`;
             const wx = i ? 'share.x' : '(1.0 - share.x)';
             const wy = j ? 'share.y' : '(1.0 - share.y)';
@@ -178,14 +185,13 @@ vec4 sz_cubic(float t) {
 // empty holds its ink against this pixel, so this pixel's ink goes on from
 // that side alone; otherwise it leaves a gap in the middle, closed when the
 // pixel is nearly full. A pixel with no ink along the axis has no band at all,
-// so it sits half a pixel from any edge, beyond what the edge position moves
-// edges by.
+// so it sits beyond the antialiased border of any edge.
 float sz_interval(float t, float a2, float a, float x, float b, float b2, float half_width) {
     float ta = smoothstep(0.0, 0.06, a);
     float tb = smoothstep(0.0, 0.06, b);
     float from_a = 1.0 - smoothstep(0.0, 0.06, a2);
     float from_b = 1.0 - smoothstep(0.0, 0.06, b2);
-    float none = mix(-0.5 - abs(t), min(0.5 * x, x - half_width) - abs(t),
+    float none = mix(-0.5 - half_width - abs(t), min(0.5 * x, x - half_width) - abs(t),
                      smoothstep(0.0, 0.05, x));
     float before = min(t + 0.5 + a, x - 0.5 - t);
     float after = min(t - 0.5 + x, 0.5 + b - t);
@@ -314,8 +320,9 @@ float sz_slanted(vec2 q, vec3 top, vec3 mid, vec3 bot, vec4 far, float half_widt
     float w = max(2.0 * h, 0.0);
     // Ink in the pixels on either side across it carries the band on into them,
     // as a stroke wider than the pixel does.
-    // The pixels two away count only where the band runs along a row or a
-    // column; across a slant, take the neighbours' ink as going on.
+    // The pixels two away are along this pixel's row and column, so they say
+    // nothing about a band across a slant: there the neighbours' ink is taken
+    // as going on, as a stroke's usually does.
     vec2 beyond = abs(m.x) > 0.9 ? (m.x > 0.0 ? far.xy : far.yx)
         : (abs(m.y) > 0.9 ? (m.y > 0.0 ? far.zw : far.wz) : vec2(1.0));
     float band = sz_interval(dot(q, m), beyond.x, sz_coverage_at(-m, top, mid, bot), w,
@@ -366,7 +373,7 @@ float sz_shape(vec2 q, vec3 top, vec3 mid, vec3 bot, vec4 far, float half_width,
     vec3 PX;
     vec3 PY;
     vec4 PF;
-    sz_factor(1.0 - top, 1.0 - mid, 1.0 - bot, 1.0 - far, PX, PY, PF);
+    float join_error = sz_factor(1.0 - top, 1.0 - mid, 1.0 - bot, 1.0 - far, PX, PY, PF);
     float join = max(
         sz_interval(q.x, 1.0 - PF.x, 1.0 - PX.x, 1.0 - PX.y, 1.0 - PX.z, 1.0 - PF.y, half_width),
         sz_interval(q.y, 1.0 - PF.z, 1.0 - PY.x, 1.0 - PY.y, 1.0 - PY.z, 1.0 - PF.w, half_width));
@@ -374,12 +381,31 @@ float sz_shape(vec2 q, vec3 top, vec3 mid, vec3 bot, vec4 far, float half_width,
     float d = sz_slanted(q, top, mid, bot, far, half_width, slanted_error, steep);
     float use_corner = smoothstep(0.0, 0.1, slanted_error - corner_error - 0.1)
         * (1.0 - smoothstep(0.02, 0.06, corner_error));
-    d = mix(d, corner, use_corner);
+    // Where an upright stroke and a flat one join, as a stem under a crossbar
+    // or a bar, the join explains the pixel's neighbours as exactly.
+    float use_join = join_error < corner_error
+        ? smoothstep(0.0, 0.1, slanted_error - join_error - 0.1)
+            * (1.0 - smoothstep(0.02, 0.06, join_error)) : 0.0;
+    d = mix(mix(d, corner, use_corner), join, use_join);
     // A pixel with no ink has none of its own, and nears its neighbours' ink
     // only where it reaches its edge; beyond its edge, its neighbour's shape
     // decides. A pixel all ink is the same with ink and paper swapped.
     d = mix(d, min(join, 0.0), 1.0 - smoothstep(0.0, 0.03, mid.y));
     return mix(d, max(corner, 0.0), smoothstep(0.97, 1.0, mid.y));
+}
+
+// A joining shape only adds ink: outside it, it falls away fast, so it never
+// sets a floor under paper that a wide antialiased border would show.
+float sz_only_inside(float d) {
+    return d < 0.0 ? 4.0 * d : d;
+}
+
+// The distance inside a band along the diagonal between pixels covered a and b
+// through their shared corner, offset 'across' from it (along the other axis's
+// fraction), where the pixels on the other diagonal are covered c and d.
+float sz_bridge(float a, float b, float c, float d, float across) {
+    float inked = min(a, b);
+    return min(inked - max(c, d) - 0.3, 0.35 * inked - 0.7071 * abs(across));
 }
 
 vec4 sz_filter(vec2 uv) {
@@ -439,7 +465,13 @@ vec4 sz_filter(vec2 uv) {
     // little, where strokes join, so a joint the shapes leave a hairline gap in
     // stays joined.
     float between = mix(mix(${near[0]}, ${near[1]}, f.x), mix(${near[2]}, ${near[3]}, f.x), f.y);
-    d = max(d, between - 0.55);
+    d = max(d, sz_only_inside(between - 0.55));
+    // A slanted stroke passes from one pixel to the next through their shared
+    // corner; where two pixels corner to corner carry ink and the other two
+    // carry little, a band along that diagonal keeps the stroke joined there.
+    d = max(d, sz_only_inside(max(
+        sz_bridge(${near[0]}, ${near[3]}, ${near[1]}, ${near[2]}, f.x - f.y),
+        sz_bridge(${near[1]}, ${near[2]}, ${near[0]}, ${near[3]}, f.x + f.y - 1.0))));
     // Bolder or thinner moves the edges of strokes; a faint pixel of
     // antialiasing with no stroke beside it grows into nothing.
     d += (sz_weight - 0.5) * smoothstep(0.15, 0.35, peak);

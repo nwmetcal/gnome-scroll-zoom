@@ -26,10 +26,14 @@ fragment shader pass draws the zoomed view: tones from a 6x6 neighbourhood and a
 4 pixels out, then a shape for each of the 4 nearest pixels, fitted to it and its 8
 neighbours so that it covers exactly as much of the pixel as its coverage says. The shape is
 a straight edge or a thin band across the pixel, or, where an upright edge and a flat one
-meeting at a corner explain the neighbours almost exactly and clearly better, that corner; a
-pixel with no ink or all ink takes the edges its neighbours give it. The 4 shapes blend only
-within 0.15 of a pixel either side of their shared edges. Where the pixels are not two tones
-with sharp edges, it draws clamped bicubic instead.
+meeting at a corner, or an upright stroke joining a flat one, explain the neighbours almost
+exactly and clearly better, that corner or join; a pixel with no ink or all ink takes the
+edges its neighbours give it, and a pixel with ink on both sides gives its ink to the side
+it goes on from, which the pixels two away along its row and column tell. Where the shapes
+leave a hairline between two pixels that both carry ink, across a side or corner to corner,
+the stroke is joined there, and the edge position moves only the edges of strokes. The 4
+shapes blend only within 0.15 of a pixel either side of their shared edges. Where the pixels
+are not two tones with sharp edges, it draws clamped bicubic instead.
 
 An earlier version blended a straight edge for each of the 16 nearest pixels with cubic
 B-spline weights. Averaging the edges on both sides of a thin stroke, and the edges that meet
@@ -55,8 +59,9 @@ radius, so zoomed text looked hand-lettered (issue #11).
 ### Checked by
 
 SZ-004 compares the drawn text, a gradient, and the alignment with GNOME's own scaling, and
-checks that square ends and corners stay square, that text keeps its weight, and that a serif
-line keeps each pixel's ink and draws its thin bars as tall as their ink.
+checks that square ends and corners stay square, that text keeps its weight, that a serif
+line keeps each pixel's ink and draws its thin bars as tall as their ink, that letters stay
+whole at 3x, 4x, and 6x, and that bolder text keeps the paper clear.
 
 ## Reversing it
 
