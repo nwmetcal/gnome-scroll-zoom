@@ -8,14 +8,18 @@
 // - glides between zoom levels instead of jumping (zoomMotion.js),
 // - moves the zoomed view on every pointer movement, in step with the
 //   display, instead of on GNOME's 60 Hz timer,
-// - redraws zoomed text with clean edges instead of blur (smoothing.js).
+// - redraws zoomed text with clean edges instead of blur (smoothing.js),
+// - leaves the view with the pointer when keyboard focus or a text cursor
+//   moves, unless its own settings say to follow them.
 //
 // Why the keys always include Super: on Wayland, mutter sends scroll events
 // straight to the app under the pointer unless the window-drag modifier
 // (org.gnome.desktop.wm.preferences mouse-button-modifier, Super by default)
 // is held. Only then do they reach the shell, where this extension sees them.
 
+import Atspi from 'gi://Atspi';
 import Clutter from 'gi://Clutter';
+import GDesktopEnums from 'gi://GDesktopEnums';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
@@ -64,7 +68,36 @@ const STYLE_MODES = {
     standard: null, // GNOME's own rendering, no shader
 };
 
+// Each switch stands in for one of GNOME's own following settings, through the zoom region
+// setter GNOME calls with it, so that setting can be handed back when the extension is off.
+const FOLLOWING = [
+    ['follow-focus', 'setFocusTrackingMode', 'focus-tracking',
+        GDesktopEnums.MagnifierFocusTrackingMode],
+    ['follow-text-cursor', 'setCaretTrackingMode', 'caret-tracking',
+        GDesktopEnums.MagnifierCaretTrackingMode],
+];
+
+// Room following leaves around what it brings into view, in pixels of the unzoomed screen:
+// the room GNOME's own push leaves for the pointer. Less when the view has less to spare.
+const FOLLOW_MARGIN_PX = 24;
+// How long the pointer must rest before following moves the view, as GNOME's zoom waits.
+const POINTER_REST_MS = 1000;
+
 const now = () => GLib.get_monotonic_time() / 1e6;
+
+// Where a view `size` long, starting at `start`, must start to show `low` to `low + extent`,
+// moving no further than that. Something already in view leaves the view still, so a text
+// cursor moving within it never moves it; something brought in gets what room the view can
+// spare; something longer than the view keeps the view within it, so focus going into a text
+// area that already fills the view leaves the lines being read where they are.
+function shownStart(start, size, low, extent) {
+    if (extent >= size)
+        return Math.min(Math.max(start, low), low + extent - size);
+    if (low >= start && low + extent <= start + size)
+        return start;
+    const margin = Math.min(FOLLOW_MARGIN_PX, (size - extent) / 2);
+    return low < start ? low - margin : low + extent + margin - size;
+}
 
 export default class ScrollZoomExtension extends Extension {
     enable() {
@@ -78,6 +111,9 @@ export default class ScrollZoomExtension extends Extension {
         this._followPointer = false;
         this._settingActive = false;
         this._smoothing = null;
+        this._held = null;
+        this._restId = 0;
+        this._pointerMovedAtS = -Infinity;
 
         this._motion = new ZoomMotion(Math.log(this._settings.get_double('max-zoom')));
         this._timeline = new Clutter.Timeline({actor: global.stage, duration: 1000, repeat_count: -1});
@@ -86,6 +122,7 @@ export default class ScrollZoomExtension extends Extension {
         this._region = Main.magnifier?.getZoomRegions()[0] ?? null;
         if (this._region) {
             this._routeMagFactorChanges();
+            this._routeFollowing();
             this._activeChangedId = Main.magnifier.connect('active-changed',
                 (_magnifier, active) => this._onActiveChanged(active));
         }
@@ -98,6 +135,8 @@ export default class ScrollZoomExtension extends Extension {
             'changed::smoothing-style', () => this._syncSmoothing(),
             'changed::edge-width', () => this._syncSmoothing(),
             'changed::edge-position', () => this._syncSmoothing(),
+            'changed::follow-focus', () => this._syncFollowing(),
+            'changed::follow-text-cursor', () => this._syncFollowing(),
             this);
         this._syncSmoothing();
 
@@ -109,7 +148,7 @@ export default class ScrollZoomExtension extends Extension {
         this._capturedEventId = global.stage.connect('captured-event',
             (_stage, event) => this._onCapturedEvent(event));
         global.backend.get_cursor_tracker().connectObject(
-            'position-invalidated', () => this._queuePan(), this);
+            'position-invalidated', () => this._onPointerMoved(), this);
     }
 
     disable() {
@@ -131,8 +170,19 @@ export default class ScrollZoomExtension extends Extension {
         }
 
         if (this._region) {
+            this._dropHeldFollow();
             Main.magnifier.disconnect(this._activeChangedId);
             delete this._region.setMagFactor;
+            const tracker = this._region._focusCaretTracker;
+            tracker.disconnect(this._focusChangedId);
+            tracker.disconnect(this._caretMovedId);
+            delete this._region._centerFromFocusPosition;
+            delete this._region._centerFromCaretPosition;
+            // With the routing gone, the zoom region would keep Scroll Zoom's last mode.
+            for (const [, method, gnomeKey] of FOLLOWING) {
+                delete this._region[method];
+                this._region[method](this._magSettings.get_enum(gnomeKey));
+            }
         }
         this._smoothing?.remove();
         this._smoothing = null;
@@ -223,6 +273,136 @@ export default class ScrollZoomExtension extends Extension {
             extension._motion.glideTo(Math.log(xMagFactor), now());
             extension._run();
         };
+    }
+
+    // GNOME's magnifier sets its zoom region's following of focus and the text cursor from its
+    // own settings, when the shell starts and on every change to them. Answer each of those
+    // calls with Scroll Zoom's own switch instead, so a change to GNOME's settings never brings
+    // following back. A switch that is on keeps GNOME listening for focus and the text cursor,
+    // but Scroll Zoom places the view: GNOME places it from the middle of what moved, which
+    // leaves most of a control above or left of the view out of it, and skips a move to where
+    // it saw the last one, so focus going back to a control it showed before goes unshown.
+    _routeFollowing() {
+        const extension = this;
+        const region = this._region;
+        for (const [key, method, , modes] of FOLLOWING) {
+            const set = region[method];
+            region[method] = function (_gnomeMode) {
+                set.call(this, extension._settings.get_boolean(key) ? modes.PUSH : modes.NONE);
+            };
+        }
+        region._centerFromFocusPosition = () => {};
+        region._centerFromCaretPosition = () => {};
+        const tracker = region._focusCaretTracker;
+        this._focusChangedId = tracker.connect('focus-changed',
+            (_tracker, event) => this._onFocusChanged(event));
+        this._caretMovedId = tracker.connect('caret-moved',
+            (_tracker, event) => this._onCaretMoved(event));
+        // A follow GNOME was holding back for the pointer to rest, from before Scroll Zoom came
+        // on, is not one the switches asked for.
+        region._xDelayed = null;
+        region._yDelayed = null;
+        this._syncFollowing();
+    }
+
+    _syncFollowing() {
+        if (!this._region)
+            return;
+        for (const [, method] of FOLLOWING)
+            this._region[method]();
+        this._dropHeldFollow();
+    }
+
+    _onFocusChanged(event) {
+        // GNOME sends focus being lost too; only focus arriving is followed.
+        if (!this._settings.get_boolean('follow-focus') || event.detail1 !== 1)
+            return;
+        const component = event.source.get_component_iface();
+        if (component) {
+            this._bringIntoView(event.source,
+                () => component.get_extents(Atspi.CoordType.WINDOW));
+        }
+    }
+
+    _onCaretMoved(event) {
+        if (!this._settings.get_boolean('follow-text-cursor'))
+            return;
+        const text = event.source.get_text_iface();
+        if (text) {
+            this._bringIntoView(text, () =>
+                text.get_character_extents(text.get_caret_offset(), Atspi.CoordType.WINDOW));
+        }
+    }
+
+    // While the pointer has moved in the last second, a hand on the mouse wins, as in GNOME's
+    // own zoom. Hold only what moved last, and look up where it is when the pointer rests, so
+    // what lands is worked out from the view and the focus as they are then: nothing, once
+    // another window has focus or its own has closed.
+    _bringIntoView(accessible, readExtents) {
+        if (!this._region.isActive())
+            return;
+        const box = this._placeOf(accessible, readExtents);
+        if (!box)
+            return;
+        const restLeftMs = POINTER_REST_MS - (now() - this._pointerMovedAtS) * 1000;
+        if (restLeftMs > 0) {
+            this._held = {accessible, readExtents, window: global.display.focus_window};
+            this._waitForRest(restLeftMs);
+            return;
+        }
+        this._dropHeldFollow();
+        this._show(box);
+    }
+
+    // Where what moved is on the screen. GNOME finds no place for what is not in the focused
+    // window, and some text cursors have a place of no size.
+    _placeOf(accessible, readExtents) {
+        const box = this._region._convertExtentsToScreenSpace(accessible, readExtents());
+        return !box || (box.width === 0 && box.height === 0) ? null : box;
+    }
+
+    _onPointerMoved() {
+        this._pointerMovedAtS = now();
+        if (this._held)
+            this._waitForRest(POINTER_REST_MS);
+        this._queuePan();
+    }
+
+    _waitForRest(delayMs) {
+        if (this._restId)
+            GLib.source_remove(this._restId);
+        this._restId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, Math.ceil(delayMs), () => {
+            this._restId = 0;
+            const held = this._held;
+            this._held = null;
+            // Looking it up again in a window that has closed would ask an app that is gone.
+            if (held && global.display.focus_window === held.window) {
+                const box = this._placeOf(held.accessible, held.readExtents);
+                if (box)
+                    this._show(box);
+            }
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _dropHeldFollow() {
+        this._held = null;
+        if (this._restId) {
+            GLib.source_remove(this._restId);
+            this._restId = 0;
+        }
+    }
+
+    // The least move, so what was in view stays close by.
+    _show(box) {
+        const region = this._region;
+        if (!region.isActive())
+            return;
+        const [x, y, width, height] = region.getROI();
+        const left = shownStart(x, width, box.x, box.width);
+        const top = shownStart(y, height, box.y, box.height);
+        if (left !== x || top !== y)
+            region.scrollContentsTo(left + width / 2, top + height / 2);
     }
 
     // Before a new movement, pick up the current zoom, which may have been
