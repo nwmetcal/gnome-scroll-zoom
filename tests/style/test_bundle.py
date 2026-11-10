@@ -163,9 +163,10 @@ def libraries(text: str) -> set[str]:
 
 def test_the_bundle_holds_only_what_the_extension_loads(tmp_path: Path) -> None:
     bundle = tmp_path / "bundle.zip"
-    subprocess.run(
-        ["make", "-s", "zip", f"BUNDLE={bundle}"], cwd=ROOT, check=True, capture_output=True
+    made = subprocess.run(
+        ["make", "-s", "zip", f"BUNDLE={bundle}"], cwd=ROOT, capture_output=True, text=True
     )
+    assert made.returncode == 0, made.stderr
     with zipfile.ZipFile(bundle) as archive:
         names = set(archive.namelist())
     wanted = {
@@ -524,8 +525,9 @@ def unread(text: str, code: str, read: set[int], held: dict[str, set[int]]) -> l
     # A name that starts with an underscore is a private member: the extension's own, whose
     # code is read where it is written, or GNOME Shell's, such as the magnifier's
     # _connectSignals, which undoes itself and is left to review.
+    declared = set(re.findall(r"\b(?:const|let|var)\s+([A-Za-z$][\w$]*)", bare))
     for offset, word in words:
-        if offset in read or not _call_or_property(bare, offset, word):
+        if offset in read or not _counted(bare, offset, word, declared):
             continue
         if SIGNAL_WORD.search(word):
             found.append(f"a signal this check cannot read: {line_of(text, offset)}")
@@ -548,13 +550,14 @@ def unread(text: str, code: str, read: set[int], held: dict[str, set[int]]) -> l
     return found
 
 
-def _call_or_property(bare: str, offset: int, word: str) -> bool:
-    """Whether a word in code is called or reached as a property, so a variable of that name,
-    such as keybindings or connected, is not taken for a call. A string name always counts."""
-    if bare[offset : offset + len(word)] != word:
+def _counted(bare: str, offset: int, word: str, declared: set[str]) -> bool:
+    """Whether a word counts: every one does but a variable the file declares under that
+    name, such as const keybindings, where it is neither called nor reached as a property.
+    A string name always counts."""
+    if bare[offset : offset + len(word)] != word or word not in declared:
         return True
-    after = re.match(OPEN, bare[offset + len(word) :]) is not None
-    return after or re.search(rf"{DOT}$", bare[max(0, offset - 80) : offset]) is not None
+    called = re.match(OPEN, bare[offset + len(word) :]) is not None
+    return called or re.search(rf"{DOT}$", bare[max(0, offset - 80) : offset]) is not None
 
 
 def misread(text: str, nodes: list[list[str | int]] | str) -> list[str]:
@@ -585,12 +588,10 @@ def parse(sources: list[str]) -> list[list[list[str | int]] | str]:
     with tempfile.TemporaryDirectory() as folder:
         listed = Path(folder) / "sources.json"
         listed.write_text(json.dumps(sources))
-        done = subprocess.run(
-            ["gjs", "-m", str(ROOT / "tests" / "style" / "js_nodes.js"), str(listed)],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        command = ["gjs", "-m", str(ROOT / "tests" / "style" / "js_nodes.js"), str(listed)]
+        done = subprocess.run(command, capture_output=True, text=True)
+    if done.returncode != 0:
+        raise RuntimeError(f"gjs could not parse the sources: {done.stderr.strip()}")
     found: list[list[list[str | int]] | str] = json.loads(done.stdout)
     return found
 
@@ -823,5 +824,24 @@ def test_every_form_found_fails_for_every_kind_of_call() -> None:
     sources = [
         before + form for before, receiver, name in FAMILIES for form in forms(receiver, name)
     ]
+    missed = [source for source, found in zip(sources, checked(sources), strict=True) if not found]
+    assert not missed, "\n".join(missed)
+
+
+# A name called bare rather than on a receiver, and one taken off its object under another.
+BARE: tuple[str, ...] = (
+    "this._t = setTimeout.call(globalThis, f, 1);",
+    "this._t = setTimeout.apply(globalThis, [f, 1]);",
+    "this._t = setTimeout?.(f, 1);",
+    "this._t = setInterval.call(globalThis, f, 1);",
+    "const later = setTimeout;\nthis._t = later(f, 1);",
+    "const {timeout_add: later} = GLib;\nthis._t = later(0, 1, f);",
+    "const {bus_watch_name: watch} = Gio;\nthis._w = watch(a, b);",
+    "const {connect} = global.stage;\nthis._id = connect('x', f);",
+)
+
+
+def test_a_bare_or_borrowed_name_fails() -> None:
+    sources: list[str] = list(BARE)
     missed = [source for source, found in zip(sources, checked(sources), strict=True) if not found]
     assert not missed, "\n".join(missed)
