@@ -94,10 +94,12 @@ def held(keys: str) -> list[str]:
     return [KEY_NAMES.get(word, word) for word in words]
 
 
-def wheel_steps(keys: list[str], notches: int, direction: str) -> list[list[Json]]:
+def wheel_steps(
+    keys: list[str], notches: int, direction: str, gap_ms: int = 60
+) -> list[list[Json]]:
     sign = 1 if direction == "up" else -1
     steps: list[list[Json]] = [step(20, "press", key) for key in keys]
-    steps += [step(60, "notch", sign) for _ in range(notches)]
+    steps += [step(gap_ms, "notch", sign) for _ in range(notches)]
     steps += [step(20, "release", key) for key in reversed(keys)]
     return steps
 
@@ -128,11 +130,14 @@ def keys_to_hold(shell: Shell, keys: str) -> None:
 @when(
     parsers.re(
         r"(?P<keys>.+) (?:is|are) held and the wheel turns (?P<notches>\d+)"
-        r" notch(?:es)? (?P<direction>up|down)"
+        r" notch(?:es)? (?P<direction>up|down)(?:, (?P<gap_ms>\d+) ms apart)?"
     )
 )
-def hold_and_turn(shell: Shell, keys: str, notches: str, direction: str) -> None:
-    shell.run_steps(wheel_steps(held(keys), int(notches), direction))
+def hold_and_turn(
+    shell: Shell, keys: str, notches: str, direction: str, gap_ms: str | None
+) -> None:
+    gap = int(gap_ms) if gap_ms else 60
+    shell.run_steps(wheel_steps(held(keys), int(notches), direction, gap), timeout_s=30)
     time.sleep(0.2)
     shell.settle()
 
