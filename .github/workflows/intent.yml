@@ -1,0 +1,24 @@
+name: intent
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  # The description's Intent section declares every requirement the branch touches.
+  intent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Save the description
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: mkdir -p build/pr && printf '%s\n' "$BODY" > build/pr/body.md
+      - run: make check-intent BODY=build/pr/body.md BASE=origin/${{ github.base_ref }}

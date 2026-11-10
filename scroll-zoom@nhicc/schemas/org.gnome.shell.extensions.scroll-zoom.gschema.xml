@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<schemalist>
+  <schema id="org.gnome.shell.extensions.scroll-zoom"
+          path="/org/gnome/shell/extensions/scroll-zoom/">
+    <key name="modifier" type="s">
+      <choices>
+        <choice value="super"/>
+        <choice value="super-alt"/>
+        <choice value="super-ctrl"/>
+        <choice value="super-shift"/>
+      </choices>
+      <default>'super'</default>
+      <summary>Keys to hold while scrolling</summary>
+    </key>
+    <key name="zoom-step" type="d">
+      <range min="1.05" max="2.0"/>
+      <default>1.2</default>
+      <summary>Zoom multiplier per mouse-wheel notch</summary>
+    </key>
+    <key name="max-zoom" type="d">
+      <range min="2.0" max="32.0"/>
+      <default>20.0</default>
+      <summary>Maximum zoom level</summary>
+    </key>
+    <key name="invert-direction" type="b">
+      <default>false</default>
+      <summary>Scroll down to zoom in</summary>
+    </key>
+    <key name="smooth-images" type="b">
+      <default>true</default>
+      <summary>Smooth zoomed images</summary>
+      <description>When off, zoomed pixels are shown as hard squares.</description>
+    </key>
+    <key name="smoothing-style" type="s">
+      <choices>
+        <choice value="text"/>
+        <choice value="soft"/>
+        <choice value="standard"/>
+      </choices>
+      <default>'text'</default>
+      <summary>How smoothing draws zoomed images</summary>
+      <description>text: rebuilds crisp edges for text and line art. soft: smooth bicubic scaling. standard: GNOME's own scaling.</description>
+    </key>
+    <key name="edge-width" type="d">
+      <range min="0.3" max="4.0"/>
+      <default>1.0</default>
+      <summary>Width of rebuilt edges, in screen pixels</summary>
+    </key>
+    <key name="edge-position" type="d">
+      <range min="0.25" max="0.75"/>
+      <default>0.5</default>
+      <summary>Where rebuilt edges sit between the dark and light tone</summary>
+      <description>Above 0.5 makes dark text on a light background bolder; below 0.5 makes it thinner.</description>
+    </key>
+    <key name="toggle-smooth-images" type="as">
+      <default><![CDATA[['<Super><Alt>backslash']]]></default>
+      <summary>Turn image smoothing on or off</summary>
+    </key>
+  </schema>
+</schemalist>

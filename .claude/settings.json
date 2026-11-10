@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(gh pr merge *)",
+      "Bash(gh api *pulls/*/merge*)"
+    ],
+    "deny": [
+      "Bash(git push origin main)",
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push *:main)",
+      "Bash(git push *:refs/heads/main*)",
+      "Bash(git push *--force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * -f)",
+      "Bash(git push * -f *)",
+      "Bash(git push * +*)",
+      "Bash(*--no-verify*)"
+    ]
+  }
+}

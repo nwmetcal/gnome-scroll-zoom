@@ -1,0 +1,279 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scroll Zoom: Mac-style screen zoom for GNOME, with sharp text</title>
+<meta name="description" content="Scroll Zoom is a free GNOME Shell extension for low vision: hold Super and scroll to zoom the whole screen, like macOS. Zoom glides smoothly, follows the pointer, and keeps text sharp.">
+<meta name="keywords" content="GNOME, screen zoom, magnifier, low vision, accessibility, GNOME Shell extension, macOS zoom, Linux, Ubuntu, Fedora, Wayland">
+<link rel="canonical" href="https://nwmetcal.github.io/gnome-scroll-zoom/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Scroll Zoom for GNOME">
+<meta property="og:description" content="Hold Super and scroll to zoom your whole screen, like a Mac. Smooth, follows the pointer, and keeps text sharp.">
+<meta property="og:url" content="https://nwmetcal.github.io/gnome-scroll-zoom/">
+<meta property="og:image" content="https://nwmetcal.github.io/gnome-scroll-zoom/scroll-zoom-demo-still.png">
+<meta property="og:image:alt" content="Text zoomed in four times, with crisp letters">
+<meta name="color-scheme" content="light dark">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Scroll Zoom",
+  "description": "A GNOME Shell extension for low vision: hold Super and scroll to zoom the whole screen, with smooth motion and sharp text.",
+  "applicationCategory": "Accessibility",
+  "operatingSystem": "Linux, GNOME 50",
+  "license": "https://spdx.org/licenses/GPL-2.0-or-later.html",
+  "downloadUrl": "https://github.com/nwmetcal/gnome-scroll-zoom/releases/latest/download/scroll-zoom.shell-extension.zip",
+  "codeRepository": "https://github.com/nwmetcal/gnome-scroll-zoom",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+}
+</script>
+<style>
+  :root {
+    --text: #111114;
+    --muted: #3d3d45;
+    --paper: #ffffff;
+    --panel: #f2f2f5;
+    --line: #6b6b75;
+    --link: #0b4fb3;
+    --accent: #0b4fb3;
+    --on-accent: #ffffff;
+    --focus: #c2410c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --text: #f4f4f6;
+      --muted: #d4d4da;
+      --paper: #111114;
+      --panel: #1f1f25;
+      --line: #9a9aa6;
+      --link: #8ab8ff;
+      --accent: #8ab8ff;
+      --on-accent: #0b0b0e;
+      --focus: #ffb366;
+    }
+  }
+  @media (prefers-contrast: more) {
+    :root { --muted: var(--text); --line: var(--text); }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 125%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--text);
+    font-family: system-ui, "Ubuntu Sans", "Cantarell", "Noto Sans", sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 44rem; margin: 0 auto; padding: 0 1rem 3rem; }
+  a { color: var(--link); text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+  a:hover { text-decoration-thickness: 0.15em; }
+  :focus-visible { outline: 0.2rem solid var(--focus); outline-offset: 0.2rem; border-radius: 0.2rem; }
+  .skip {
+    position: absolute; left: 0.5rem; top: -4rem; padding: 0.6rem 1rem;
+    background: var(--accent); color: var(--on-accent); border-radius: 0.4rem; z-index: 1;
+  }
+  .skip:focus { top: 0.5rem; }
+  header { padding: 2.5rem 0 1rem; }
+  h1 { font-size: 2.4rem; line-height: 1.15; margin: 0 0 0.5rem; }
+  h2 { font-size: 1.5rem; line-height: 1.25; margin: 2.5rem 0 0.75rem; }
+  h3 { font-size: 1.1rem; margin: 1.5rem 0 0.25rem; }
+  .lead { font-size: 1.25rem; color: var(--muted); margin: 0 0 1.5rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.25rem 0 0; }
+  .button {
+    display: inline-block; min-height: 2.75rem; padding: 0.6rem 1.25rem;
+    border-radius: 0.5rem; font-weight: 700; text-decoration: none;
+    border: 0.12rem solid var(--accent);
+  }
+  .button.primary { background: var(--accent); color: var(--on-accent); }
+  .button.secondary { color: var(--link); }
+  figure { margin: 1.5rem 0; }
+  figure img { display: block; width: 100%; height: auto; border: 0.06rem solid var(--line); border-radius: 0.5rem; }
+  figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 0.4rem; }
+  ul.features { padding-left: 1.2rem; }
+  ul.features li { margin: 0.5rem 0; }
+  ol.steps { padding-left: 1.4rem; }
+  ol.steps > li { margin: 0.9rem 0; }
+  .code {
+    display: flex; flex-wrap: wrap; align-items: stretch; gap: 0.5rem;
+    margin: 0.5rem 0; background: var(--panel); border: 0.06rem solid var(--line);
+    border-radius: 0.5rem; padding: 0.5rem;
+  }
+  .code code {
+    flex: 1 1 18rem; font-family: ui-monospace, "Ubuntu Sans Mono", "DejaVu Sans Mono", monospace;
+    font-size: 0.85rem; padding: 0.4rem 0.5rem; overflow-wrap: anywhere;
+  }
+  .code button {
+    font: inherit; font-size: 0.9rem; font-weight: 700; min-height: 2.5rem; padding: 0 1rem;
+    color: var(--link); background: var(--paper); border: 0.12rem solid var(--accent);
+    border-radius: 0.4rem; cursor: pointer;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 0.75rem 0; }
+  th, td { text-align: left; vertical-align: top; padding: 0.55rem 0.6rem; border-bottom: 0.06rem solid var(--line); }
+  th { font-weight: 700; }
+  kbd {
+    font-family: inherit; font-weight: 700; padding: 0 0.3rem; border: 0.06rem solid var(--line);
+    border-radius: 0.3rem; background: var(--panel); white-space: nowrap;
+  }
+  details { border: 0.06rem solid var(--line); border-radius: 0.5rem; padding: 0.6rem 1rem; margin: 0.6rem 0; }
+  summary { font-weight: 700; cursor: pointer; min-height: 2rem; }
+  .note { background: var(--panel); border-left: 0.3rem solid var(--accent); padding: 0.75rem 1rem; border-radius: 0.3rem; }
+  footer { border-top: 0.06rem solid var(--line); margin-top: 3rem; padding-top: 1rem; color: var(--muted); font-size: 0.9rem; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+</style>
+</head>
+<body>
+<a class="skip" href="#install">Skip to install</a>
+<div class="wrap">
+<header>
+  <h1>Scroll Zoom</h1>
+  <p class="lead">Zoom your whole screen the way a Mac does: hold <kbd>Super</kbd> and scroll.
+  Smooth, it follows your pointer, and text stays sharp. A free accessibility extension for GNOME.</p>
+  <div class="actions">
+    <a class="button primary" href="https://github.com/nwmetcal/gnome-scroll-zoom/releases/latest/download/scroll-zoom.shell-extension.zip">Download Scroll Zoom</a>
+    <a class="button secondary" href="#install">How to install</a>
+    <a class="button secondary" href="https://github.com/nwmetcal/gnome-scroll-zoom">Source code</a>
+  </div>
+</header>
+
+<main>
+  <figure>
+    <picture>
+      <source srcset="scroll-zoom-demo-still.png" media="(prefers-reduced-motion: reduce)">
+      <img src="scroll-zoom-demo.gif" width="800" height="450"
+        alt="A window of text zooms in smoothly around the pointer, from normal size to four times larger. The letters stay crisp.">
+    </picture>
+    <figcaption>Zooming in on a paragraph. The animation plays once; if your system asks for
+    reduced motion, you see the zoomed text without the animation.</figcaption>
+  </figure>
+
+  <section aria-labelledby="why">
+    <h2 id="why">Why this exists</h2>
+    <p>Scroll Zoom is made by a visually impaired developer who relies on screen zoom every day,
+    and was tired of zoom tools that fall short on every platform. GNOME's built-in zoom works,
+    but it jumps between levels, lags behind the pointer on fast displays, and blurs the very
+    text you zoomed in to read. Scroll Zoom fixes those three things.</p>
+  </section>
+
+  <section aria-labelledby="what">
+    <h2 id="what">What it does</h2>
+    <ul class="features">
+      <li><strong>Hold Super and scroll</strong> to zoom in and out around the pointer, with a
+      mouse wheel or a touchpad. Zoom all the way out and zoom turns off.</li>
+      <li><strong>Zoom glides</strong> instead of jumping. Spin the wheel faster to zoom faster;
+      a quick touchpad swipe coasts to a stop.</li>
+      <li><strong>The view follows your pointer smoothly</strong>, in step with your display, even
+      at 144 Hz and above.</li>
+      <li><strong>Text stays sharp.</strong> Letters and lines are redrawn with crisp, smooth edges,
+      while photos stay smooth.</li>
+      <li><strong>It works with GNOME's own zoom</strong>: its keyboard shortcuts, Settings page,
+      color effects, and crosshairs all keep working.</li>
+    </ul>
+    <figure>
+      <img src="zoom-before-after-4x.png" width="1026" height="820"
+        alt="Side by side at four times zoom: on the left, GNOME's own zoom, where small text, colored text, and thin lines are blurred; on the right, Scroll Zoom, where the same text and lines are crisp.">
+      <figcaption>The same text at 4x: GNOME's own zoom (left) and Scroll Zoom (right).</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="install">
+    <h2 id="install" tabindex="-1">Install</h2>
+    <p class="note">You need <strong>GNOME 50 on Wayland</strong>, for example Ubuntu 26.04 or
+    Fedora 44. To check, open a terminal and run <code>gnome-shell --version</code>.</p>
+    <ol class="steps">
+      <li><a href="https://github.com/nwmetcal/gnome-scroll-zoom/releases/latest/download/scroll-zoom.shell-extension.zip">Download
+        the extension</a>. It saves to your Downloads folder.</li>
+      <li>Open a terminal and install it:
+        <div class="code">
+          <code id="cmd-install">gnome-extensions install --force ~/Downloads/scroll-zoom.shell-extension.zip</code>
+          <button type="button" data-copy="cmd-install">Copy<span class="visually-hidden"> the install command</span></button>
+        </div>
+      </li>
+      <li><strong>Log out and log back in.</strong> GNOME only loads new extensions when you log in.</li>
+      <li>Open the <strong>Extensions</strong> app and switch on <strong>Scroll Zoom</strong>, or run:
+        <div class="code">
+          <code id="cmd-enable">gnome-extensions enable scroll-zoom@nhicc</code>
+          <button type="button" data-copy="cmd-enable">Copy<span class="visually-hidden"> the enable command</span></button>
+        </div>
+      </li>
+    </ol>
+    <p>Then hold <kbd>Super</kbd>, the key with the Windows logo on most keyboards, and scroll.</p>
+    <p role="status" aria-live="polite" class="visually-hidden" id="copy-status"></p>
+  </section>
+
+  <section aria-labelledby="use">
+    <h2 id="use">How to use it</h2>
+    <table>
+      <caption class="visually-hidden">Keys and what they do</caption>
+      <thead><tr><th scope="col">Do this</th><th scope="col">To</th></tr></thead>
+      <tbody>
+        <tr><td>Hold <kbd>Super</kbd> and scroll up or down</td><td>Zoom in or out around the pointer</td></tr>
+        <tr><td>Zoom all the way out</td><td>Turn zoom off</td></tr>
+        <tr><td><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>8</kbd></td><td>Turn zoom on or off, at the last level you used</td></tr>
+        <tr><td><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>=</kbd> and <kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>-</kbd></td><td>Zoom in and out with the keyboard</td></tr>
+        <tr><td><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>\</kbd></td><td>Switch smoothing off (hard pixels) and back on</td></tr>
+      </tbody>
+    </table>
+    <p>These are the same keys a Mac uses, with Super in place of Cmd and Alt in place of Option.
+    To change the settings, open the <strong>Extensions</strong> app and choose Scroll Zoom's
+    settings: the keys to hold, how fast it zooms, the maximum zoom, and how text is smoothed.</p>
+  </section>
+
+  <section aria-labelledby="help">
+    <h2 id="help">Questions</h2>
+    <details>
+      <summary>Nothing happens when I hold Super and scroll</summary>
+      <p>Log out and back in after installing. If it still does nothing, run
+      <code>gnome-extensions info scroll-zoom@nhicc</code>: it should say <code>State: ACTIVE</code>.
+      If it doesn't, <a href="https://github.com/nwmetcal/gnome-scroll-zoom/issues">tell us</a> what
+      <code>journalctl --user -b -g scroll-zoom</code> prints.</p>
+    </details>
+    <details>
+      <summary>Can I use Ctrl and scroll, like on a Mac?</summary>
+      <p>No. On GNOME, a scroll goes straight to the app under the pointer, and GNOME itself
+      only sees it while Super is held. That's also why apps keep their own Ctrl and scroll zoom.</p>
+    </details>
+    <details>
+      <summary>Text looks too bold or too thin, or I want to see real pixels</summary>
+      <p>Choose another smoothing style in the settings, or press
+      <kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>\</kbd> to switch smoothing off.</p>
+    </details>
+    <details>
+      <summary>Does it work on other GNOME versions?</summary>
+      <p>It's built and tested on GNOME 50 under Wayland. New versions are added once its tests
+      pass on them.</p>
+    </details>
+    <details>
+      <summary>How do I remove it?</summary>
+      <div class="code">
+        <code id="cmd-remove">gnome-extensions uninstall scroll-zoom@nhicc</code>
+        <button type="button" data-copy="cmd-remove">Copy<span class="visually-hidden"> the uninstall command</span></button>
+      </div>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <p>Scroll Zoom is free software under the GPL-2.0-or-later license.
+  <a href="https://github.com/nwmetcal/gnome-scroll-zoom">Source code on GitHub</a> ·
+  <a href="https://github.com/nwmetcal/gnome-scroll-zoom/issues">Report a problem</a></p>
+</footer>
+</div>
+<script>
+  // Copy buttons. The commands are plain text on the page too, so nothing depends on this.
+  const status = document.getElementById('copy-status');
+  for (const button of document.querySelectorAll('button[data-copy]')) {
+    button.addEventListener('click', async () => {
+      const text = document.getElementById(button.dataset.copy).textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        status.textContent = 'Copied to the clipboard.';
+      } catch {
+        status.textContent = 'Could not copy. Select the command and copy it yourself.';
+      }
+    });
+  }
+</script>
+</body>
+</html>

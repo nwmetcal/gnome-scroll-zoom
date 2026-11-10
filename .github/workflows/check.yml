@@ -1,0 +1,43 @@
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Everything that needs no GNOME Shell. The scenarios tagged @shell are pending here:
+  # GitHub's runners have no GNOME Shell 50, so make test-shell runs on a developer's machine.
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Install gjs, which runs the glide's scenarios
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gjs
+      - run: make setup
+      - run: make check
+      - name: Commit messages on the branch
+        if: github.event_name == 'pull_request'
+        # The branch's own head, not the merge commit GitHub checks out for a pull request.
+        run: make check-commits BASE=origin/${{ github.base_ref }} HEAD=${{ github.event.pull_request.head.sha }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: traceability
+          path: build/traceability.md
+          if-no-files-found: ignore

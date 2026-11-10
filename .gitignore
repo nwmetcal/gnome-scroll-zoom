@@ -1,0 +1,11 @@
+# Built bundles (make zip)
+/build/
+*.shell-extension.zip
+
+# Compiled settings schemas (install.sh compiles them in the install folder)
+gschemas.compiled
+
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/

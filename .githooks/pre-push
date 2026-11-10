@@ -1,0 +1,12 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Changes reach main only through a merged pull request. The one push allowed is the one that
+# creates main on a new remote, when there is no main there to protect yet.
+zero=0000000000000000000000000000000000000000
+while read -r _ _ remote_ref remote_sha; do
+	if [ "$remote_ref" = "refs/heads/main" ] && [ "$remote_sha" != "$zero" ]; then
+		echo "pre-push: pushing to main is blocked; push a branch and open a pull request." >&2
+		exit 1
+	fi
+done
+exit 0

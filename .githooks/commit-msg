@@ -1,0 +1,4 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# The commit rules in AGENTS.md, checked before the message is recorded.
+exec python3 -m tools.commits --message "$1"

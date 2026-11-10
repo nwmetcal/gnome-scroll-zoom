@@ -1,0 +1,47 @@
+[project]
+name = "gnome-scroll-zoom-checks"
+version = "0"
+description = "The requirements, tests, and repository tools of Scroll Zoom"
+requires-python = ">=3.12"
+license = "GPL-2.0-or-later"
+
+[dependency-groups]
+dev = [
+    "numpy>=2.0",
+    "pillow>=11.0",
+    "pyright[nodejs]>=1.1.400",
+    "pytest>=8.3",
+    "pytest-bdd>=8.1",
+    "ruff>=0.11",
+    "shellcheck-py>=0.10.0.1",
+]
+
+[tool.uv]
+# Nothing here is installed: the tests and tools import from the repository's root.
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PTH", "RET", "ANN", "TD", "BLE", "TID"]
+ignore = ["TD002"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.Any".msg = "name the type"
+
+[tool.pyright]
+include = ["tests", "tools"]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+bdd_features_base_dir = "requirements"
+addopts = "-ra"
+markers = [
+    "invariant: holds on every change",
+    "golden: compares what the extension draws with a known answer",
+    "shell: needs the private headless GNOME Shell 50 (pytest --shell)",
+]

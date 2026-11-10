@@ -1,0 +1,63 @@
+# Contributing to Scroll Zoom
+
+Thanks for helping. Bug reports and ideas go in
+[issues](https://github.com/nwmetcal/gnome-scroll-zoom/issues). For a bug, say your GNOME
+version (`gnome-shell --version`), your display's size and refresh rate, and what
+`journalctl --user -b -g scroll-zoom` prints.
+
+## How changes are made
+
+Changes follow the loop in [AGENTS.md](AGENTS.md), which holds every rule and what enforces
+it:
+
+1. Each behavior is a Gherkin requirement under `requirements/`, named by its `SZ-###` id.
+   A change that alters behavior starts there, and its scenarios are seen to fail first.
+2. Then the smallest code that makes them pass.
+3. Then independent reviews, under the lenses in `review/lenses/`, until each is clean.
+
+[docs/explanation/the-loop.md](docs/explanation/the-loop.md) says how the parts fit, and
+`docs/decisions/` records why the design is what it is.
+
+## Setting up
+
+You need GNOME Shell 50, `uv`, `gjs`, and `make`.
+
+```bash
+make setup        # the Python tools, and the git hooks in .githooks/
+make check        # lint, types, and every test that needs no GNOME Shell
+make test-shell   # all of that, plus the scenarios that run in GNOME Shell 50
+make install      # install your working copy; log out and back in to load it
+```
+
+`make test-shell` starts a private, headless GNOME Shell with the extension loaded
+(`dev/test-shell.sh`). It runs on its own D-Bus session and settings, so it never touches
+your desktop. It types and scrolls through virtual input devices and checks what GNOME
+draws. Only one test shell runs at a time on a machine.
+
+## Looking at the smoothing by eye
+
+```bash
+dev/test-shell.sh start
+dev/test-shell.sh client gjs -m "$PWD/dev/test-page.js"
+dev/capture.sh /tmp/shots 4 200 140     # zoom 4x on a point, screenshot each style
+dev/montage.py /tmp/shots/cmp.png 0 120 1000 260 /tmp/shots/*-4x.png
+dev/test-shell.sh stop
+```
+
+`dev/demo.py` makes the animation the README shows.
+
+## Commits
+
+Commit titles are `type(scope): description`, lowercase, at most 72 characters, with a
+body of `-` bullets. The commit-msg hook checks them; `make check-commits` checks a branch.
+
+## Releases
+
+Push a tag `vX.Y.Z` matching `version-name` in `scroll-zoom@nhicc/metadata.json`. The
+`release` workflow builds `scroll-zoom.shell-extension.zip` and publishes the release.
+`make zip` builds the same bundle locally.
+
+## After a GNOME upgrade
+
+`metadata.json` lists only the GNOME versions the tests have passed on. On a new version,
+run `make test-shell`; once it passes, add the version to `shell-version`.

@@ -1,0 +1,11 @@
+{
+  "uuid": "scroll-zoom@nhicc",
+  "name": "Scroll Zoom",
+  "description": "An accessibility extension: hold Super and scroll to zoom the whole screen, like macOS. Zoom glides smoothly, follows the pointer, and keeps zoomed text sharp. Works with GNOME's own zoom, so Super+Alt+8 still turns it on and off.",
+  "version-name": "1.0.0",
+  "shell-version": [
+    "50"
+  ],
+  "settings-schema": "org.gnome.shell.extensions.scroll-zoom",
+  "url": "https://github.com/nwmetcal/gnome-scroll-zoom"
+}
