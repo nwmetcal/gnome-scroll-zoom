@@ -78,22 +78,24 @@ const FOLLOWING = [
 ];
 
 // Room following leaves around what it brings into view, in pixels of the unzoomed screen:
-// the room GNOME's own push leaves for the pointer.
+// the room GNOME's own push leaves for the pointer. Less when the view has less to spare.
 const FOLLOW_MARGIN_PX = 24;
+// How long the pointer must rest before following moves the view, as GNOME's zoom waits.
+const POINTER_REST_MS = 1000;
 
 const now = () => GLib.get_monotonic_time() / 1e6;
 
-// Where a view `size` long, starting at `start`, must start to show `low` to `low + extent`
-// with room around it, moving no further than that. Something longer than the view keeps its
-// start in view.
+// Where a view `size` long, starting at `start`, must start to show `low` to `low + extent`,
+// moving no further than that. Something already in view leaves the view still, so a text
+// cursor moving within it never moves it; something brought in gets what room the view can
+// spare; something longer than the view keeps its start in view.
 function shownStart(start, size, low, extent) {
-    const first = low - FOLLOW_MARGIN_PX;
-    const last = low + extent + FOLLOW_MARGIN_PX;
-    if (last - first > size || first < start)
-        return first;
-    if (last > start + size)
-        return last - size;
-    return start;
+    if (extent >= size)
+        return low >= start && low < start + size ? start : low;
+    if (low >= start && low + extent <= start + size)
+        return start;
+    const margin = Math.min(FOLLOW_MARGIN_PX, (size - extent) / 2);
+    return low < start ? low - margin : low + extent + margin - size;
 }
 
 export default class ScrollZoomExtension extends Extension {
@@ -108,6 +110,9 @@ export default class ScrollZoomExtension extends Extension {
         this._followPointer = false;
         this._settingActive = false;
         this._smoothing = null;
+        this._heldBox = null;
+        this._restId = 0;
+        this._pointerMovedAt = -Infinity;
 
         this._motion = new ZoomMotion(Math.log(this._settings.get_double('max-zoom')));
         this._timeline = new Clutter.Timeline({actor: global.stage, duration: 1000, repeat_count: -1});
@@ -142,7 +147,7 @@ export default class ScrollZoomExtension extends Extension {
         this._capturedEventId = global.stage.connect('captured-event',
             (_stage, event) => this._onCapturedEvent(event));
         global.backend.get_cursor_tracker().connectObject(
-            'position-invalidated', () => this._queuePan(), this);
+            'position-invalidated', () => this._onPointerMoved(), this);
     }
 
     disable() {
@@ -164,6 +169,7 @@ export default class ScrollZoomExtension extends Extension {
         }
 
         if (this._region) {
+            this._dropHeldFollow();
             Main.magnifier.disconnect(this._activeChangedId);
             delete this._region.setMagFactor;
             const tracker = this._region._focusCaretTracker;
@@ -291,6 +297,10 @@ export default class ScrollZoomExtension extends Extension {
             (_tracker, event) => this._onFocusChanged(event));
         this._caretMovedId = tracker.connect('caret-moved',
             (_tracker, event) => this._onCaretMoved(event));
+        // A follow GNOME was holding back for the pointer to rest, from before Scroll Zoom came
+        // on, is not one the switches asked for.
+        region._xDelayed = null;
+        region._yDelayed = null;
         this._syncFollowing();
     }
 
@@ -299,10 +309,7 @@ export default class ScrollZoomExtension extends Extension {
             return;
         for (const [, method] of FOLLOWING)
             this._region[method]();
-        // GNOME holds a follow back until the pointer has rested a second. One it was holding
-        // when Scroll Zoom came on, or when a switch changed, is not one the switches asked for.
-        this._region._xDelayed = null;
-        this._region._yDelayed = null;
+        this._dropHeldFollow();
     }
 
     _onFocusChanged(event) {
@@ -324,22 +331,65 @@ export default class ScrollZoomExtension extends Extension {
         }
     }
 
-    // Move the view only as far as it takes to show the whole of what moved. GNOME's own
-    // scrolling keeps its wait for the pointer to rest, so a hand on the mouse wins.
+    // While the pointer has moved in the last second, a hand on the mouse wins, as in GNOME's
+    // own zoom. Hold only what moved last, not where to put the view, so what lands is worked
+    // out from the view and the focus as they are when the pointer rests.
     _bringIntoView(accessible, windowExtents) {
-        const region = this._region;
-        if (!region.isActive())
+        if (!this._region.isActive())
             return;
-        const box = region._convertExtentsToScreenSpace(accessible, windowExtents);
+        const box = this._region._convertExtentsToScreenSpace(accessible, windowExtents);
         // GNOME finds no place for what is not in the focused window, and some text cursors
         // have a place of no size.
         if (!box || (box.width === 0 && box.height === 0))
+            return;
+        const restLeftMs = POINTER_REST_MS - (now() - this._pointerMovedAt) * 1000;
+        if (restLeftMs > 0) {
+            this._heldBox = box;
+            this._waitForRest(restLeftMs);
+            return;
+        }
+        this._dropHeldFollow();
+        this._show(box);
+    }
+
+    _onPointerMoved() {
+        this._pointerMovedAt = now();
+        if (this._heldBox)
+            this._waitForRest(POINTER_REST_MS);
+        this._queuePan();
+    }
+
+    _waitForRest(delayMs) {
+        if (this._restId)
+            GLib.source_remove(this._restId);
+        this._restId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, Math.ceil(delayMs), () => {
+            this._restId = 0;
+            const box = this._heldBox;
+            this._heldBox = null;
+            if (box)
+                this._show(box);
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _dropHeldFollow() {
+        this._heldBox = null;
+        if (this._restId) {
+            GLib.source_remove(this._restId);
+            this._restId = 0;
+        }
+    }
+
+    // Move the view only as far as it takes to show the whole of what moved.
+    _show(box) {
+        const region = this._region;
+        if (!region.isActive())
             return;
         const [x, y, width, height] = region.getROI();
         const left = shownStart(x, width, box.x, box.width);
         const top = shownStart(y, height, box.y, box.height);
         if (left !== x || top !== y)
-            region._scrollContentsToDelayed(left + width / 2, top + height / 2);
+            region.scrollContentsTo(left + width / 2, top + height / 2);
     }
 
     // Before a new movement, pick up the current zoom, which may have been
