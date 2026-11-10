@@ -131,8 +131,7 @@
   <p class="lead">Zoom your whole screen the way a Mac does: hold <kbd>Super</kbd> and scroll.
   Smooth, it follows your pointer, and text stays sharp. A free accessibility extension for GNOME.</p>
   <div class="actions">
-    <a class="button primary" href="https://github.com/nwmetcal/gnome-scroll-zoom/releases/latest/download/scroll-zoom.shell-extension.zip">Download Scroll Zoom</a>
-    <a class="button secondary" href="#install">How to install</a>
+    <a class="button primary" href="#install">Install Scroll Zoom</a>
     <a class="button secondary" href="https://github.com/nwmetcal/gnome-scroll-zoom">Source code</a>
   </div>
 </header>
@@ -181,6 +180,47 @@
     <h2 id="install" tabindex="-1">Install</h2>
     <p class="note">You need <strong>GNOME 50 on Wayland</strong>, for example Ubuntu 26.04 or
     Fedora 44. To check, open a terminal and run <code>gnome-shell --version</code>.</p>
+
+    <h3 id="from-ego">From extensions.gnome.org, which keeps it up to date</h3>
+    <ol class="steps">
+      <li>Install <strong>Extension Manager</strong>, if you don't have it. On Ubuntu, open a
+        terminal and run:
+        <div class="code">
+          <code id="cmd-manager">sudo apt install gnome-shell-extension-manager</code>
+          <button type="button" data-copy="cmd-manager">Copy<span class="visually-hidden"> the command that installs Extension Manager</span></button>
+        </div>
+        On other systems, get it from
+        <a href="https://flathub.org/apps/com.mattjakeman.ExtensionManager">Flathub</a>.</li>
+      <li>Open <strong>Extension Manager</strong>, choose <strong>Browse</strong>, and search
+        for <strong>Scroll Zoom</strong>.</li>
+      <li>Choose <strong>Install…</strong>, then <strong>Install</strong> when GNOME asks. It
+        starts right away, with no need to log out.</li>
+    </ol>
+    <p>Then hold <kbd>Super</kbd>, the key with the Windows logo on most keyboards, and scroll.</p>
+    <p>You can also install it from <a href="https://extensions.gnome.org/">extensions.gnome.org</a>
+    in your web browser: search for Scroll Zoom there and switch it on, with the GNOME Shell
+    integration add-on the site offers.</p>
+
+    <h3 id="updates">How updates arrive</h3>
+    <ul class="features">
+      <li>Each time you log in, and once a day after that, GNOME asks extensions.gnome.org for a
+      newer Scroll Zoom that runs on your version of GNOME.</li>
+      <li>When there is one, GNOME downloads it and shows a notification, <strong>Extension
+      Updates Available</strong>. The Extensions app says the extension will be updated on next
+      login.</li>
+      <li>The new version starts the next time you log in. There is nothing to click or
+      install.</li>
+      <li>GNOME looks for updates only while <strong>Extension Manager</strong> or the
+      <strong>Extensions</strong> app is installed, so keep one of them.</li>
+      <li>A new version reaches extensions.gnome.org once the site's reviewers have checked it,
+      which can take a few days.</li>
+      <li>After you upgrade GNOME, Scroll Zoom stays off until a version for the new GNOME is
+      out. GNOME then installs it at a login, on its own.</li>
+    </ul>
+
+    <h3 id="from-zip">From the release zip, which does not update itself</h3>
+    <p>A copy installed this way, or from the source code, never updates itself: to get a new
+    version, you download and install it again.</p>
     <ol class="steps">
       <li><a href="https://github.com/nwmetcal/gnome-scroll-zoom/releases/latest/download/scroll-zoom.shell-extension.zip">Download
         the extension</a>. It saves to your Downloads folder.</li>
@@ -190,7 +230,8 @@
           <button type="button" data-copy="cmd-install">Copy<span class="visually-hidden"> the install command</span></button>
         </div>
       </li>
-      <li><strong>Log out and log back in.</strong> GNOME only loads new extensions when you log in.</li>
+      <li><strong>Log out and log back in.</strong> GNOME only loads extensions installed this
+        way when you log in.</li>
       <li>Open the <strong>Extensions</strong> app and switch on <strong>Scroll Zoom</strong>, or run:
         <div class="code">
           <code id="cmd-enable">gnome-extensions enable scroll-zoom@nhicc</code>
@@ -198,7 +239,9 @@
         </div>
       </li>
     </ol>
-    <p>Then hold <kbd>Super</kbd>, the key with the Windows logo on most keyboards, and scroll.</p>
+    <p>To switch to a copy that updates itself, uninstall this one, install Scroll Zoom from
+    extensions.gnome.org as above, then log out and back in. The uninstall command is under
+    <a href="#help">Questions</a>.</p>
     <p role="status" aria-live="polite" class="visually-hidden" id="copy-status"></p>
   </section>
 
@@ -254,7 +297,7 @@
     <details>
       <summary>Does it work on other GNOME versions?</summary>
       <p>It's built and tested on GNOME 50 under Wayland. New versions are added once its tests
-      pass on them.</p>
+      pass on them, and a copy installed from extensions.gnome.org then updates itself to it.</p>
     </details>
     <details>
       <summary>How do I remove it?</summary>

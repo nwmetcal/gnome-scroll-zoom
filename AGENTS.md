@@ -21,10 +21,11 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
   `make check-review REVIEW=<file>` checks a review's form before it is posted.
 - `make install` installs the working copy for the current user; on Wayland it loads at the
   next login. `make zip` builds `build/scroll-zoom.shell-extension.zip`, the bundle people
-  download and install with `gnome-extensions install`.
+  download and install with `gnome-extensions install`, and the one extensions.gnome.org takes.
 - A tag `vX.Y.Z` that matches `version-name` in `metadata.json` publishes a release with that
-  bundle, through the `release` workflow. A change under `site/` or to the README's images
-  republishes the project page, through the `pages` workflow.
+  bundle, through the `release` workflow, and once the owner has set the account, uploads it
+  to extensions.gnome.org for review (decision 0007). A change under `site/` or to the
+  README's images republishes the project page, through the `pages` workflow.
 
 ## Code map
 
@@ -38,8 +39,9 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
   full-screen app SZ-008 zooms over.
 - `dev/` holds the private test shell, the test window, and the capture tools for comparing
   smoothing by eye.
-- `tools/` holds the repository's own tools: the commit rules, the intent check, and the
-  review brief and form check. `review/` holds the review protocol and its lenses.
+- `tools/` holds the repository's own tools: the commit rules, the intent check, the review
+  brief and form check, and the upload to extensions.gnome.org. `review/` holds the review
+  protocol and its lenses.
 - `.claude/` holds the agent settings, the reviewer agent, and the `deliver` playbook.
   `.githooks/` holds the commit and push hooks, `.github/` the pull request template and the
   workflows.
@@ -56,7 +58,10 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
 - The only settings outside its own schema that it writes are GNOME's zoom on/off and zoom
   level, `screen-magnifier-enabled` and `mag-factor`.
 - `zoomMotion.js` imports nothing of GNOME Shell, so the glide is tested without one.
-- `metadata.json` lists only the GNOME Shell versions the `@shell` scenarios have passed on.
+- `metadata.json` lists only the GNOME Shell versions the `@shell` scenarios have passed on:
+  a major joins once they pass on its stable release (decision 0008).
+- The bundle is one extensions.gnome.org's review takes: only the files the extension loads,
+  and a `disable()` that undoes everything `enable()` did.
 - No tracked file is over 1 MB.
 - Scroll Zoom is an accessibility tool, and its pages are for people with low vision: every
   image has alt text that says what it shows, an animation plays once and has a still for
@@ -138,6 +143,9 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | Every `make` target this file names exists, and the code map names every folder | `tests/style/test_agents_md.py` |
 | No words that sell, no tool or model names, no emoji | `tests/style/test_words.py` |
 | No tracked file over 1 MB | `tests/style/test_sizes.py` |
+| The bundle holds only what the extension loads, metadata and a schema the site takes, and each process's own libraries; every signal, main loop source, and keybinding is undone | `tests/style/test_bundle.py` |
+| `shell-version` lists whole stable majors, and the test shell runs only on one it lists | `tests/style/test_bundle.py`; `gnome_shell_refusal` in `tests/shell.py` |
+| An upload to extensions.gnome.org sends what `gnome-extensions upload` sends, and never prints the password or token | `tests/unit/test_ego.py` |
 | A step crops only boxes wholly on its screenshot, so it never judges an empty crop | `crop` in `tests/images.py`, held by `tests/unit/test_images.py` |
 | The `@shell` scenarios pass with test shells side by side, as a review round runs them | the `deliver` skill's Prove step: two `make test-shell` runs at once when the extension, the test shell, its harness, or a `@shell` step changes |
 | Every image in the README and the project page has alt text | `tests/style/test_pages.py` |
