@@ -6,16 +6,41 @@
 //
 // SOURCES.json holds a list of JavaScript sources. This prints a list with one entry for
 // each: a list of [kind, line, column] for every leaf the parser places, or the parser's
-// error. Lines and columns count from 1, and a column counts UTF-16 code units.
+// error. Lines and columns count from 1, and a column counts characters, as Python does.
 
 import GLib from 'gi://GLib';
 
 const LEAVES = new Set(['Identifier', 'ThisExpression', 'Super', 'Literal']);
 // gjs 1.80 counts columns from 0, and gjs 1.88 from 1: take this gjs's own first column.
 const ORIGIN = Reflect.parse('x;').body[0].loc.start.column;
+// And gjs counts a column in UTF-16 code units, characters, or UTF-8 bytes, by version: a
+// character outside the Basic Multilingual Plane, before x, tells which.
+const WIDE = Reflect.parse("'\u{1d465}'; x;").body[1].expression.loc.start.column - ORIGIN;
+const UNIT = {6: 'utf16', 5: 'characters', 8: 'utf8'}[WIDE];
+if (!UNIT)
+    throw new Error(`this gjs counts columns in a unit not known here: x at ${WIDE}`);
+
+let lines = [];
+
+// The column, from 1, in characters on its line.
+function characters(line, column) {
+    const text = lines[line - 1] ?? '';
+    if (UNIT === 'characters')
+        return column;
+    if (UNIT === 'utf16')
+        return [...text.slice(0, column)].length;
+    let bytes = 0, count = 0;
+    for (const char of text) {
+        if (bytes >= column)
+            break;
+        bytes += new TextEncoder().encode(char).length;
+        count++;
+    }
+    return count;
+}
 
 function place(kind, loc) {
-    return [kind, loc.start.line, loc.start.column - ORIGIN + 1];
+    return [kind, loc.start.line, characters(loc.start.line, loc.start.column - ORIGIN) + 1];
 }
 
 function kindOf(node) {
@@ -55,6 +80,7 @@ function walk(node, found) {
 const [, contents] = GLib.file_get_contents(ARGV[0]);
 const sources = JSON.parse(new TextDecoder().decode(contents));
 print(JSON.stringify(sources.map(source => {
+    lines = source.split('\n');
     let ast;
     try {
         ast = Reflect.parse(source, {target: 'module'});

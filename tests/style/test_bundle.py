@@ -573,7 +573,7 @@ def misread(text: str, nodes: list[list[str | int]] | str) -> list[str]:
     found: list[str] = []
     regexes: set[int] = set()
     for kind, line, column in nodes:
-        offset = _offset(text, lines[int(line) - 1], int(column))
+        offset = lines[int(line) - 1] + int(column) - 1
         if kind == "regex":
             regexes.add(offset)
         if kind != "code":
@@ -589,15 +589,6 @@ def misread(text: str, nodes: list[list[str | int]] | str) -> list[str]:
         if kind == "regex" and start not in regexes:
             found.append(f"a line this check cannot read: {line_of(text, start)}")
     return found
-
-
-def _offset(text: str, line_start: int, column: int) -> int:
-    """The offset in text of a column on a line, which gjs counts in UTF-16 code units."""
-    units, index = 1, line_start
-    while units < column and index < len(text) and text[index] != "\n":
-        units += 2 if ord(text[index]) > 0xFFFF else 1
-        index += 1
-    return index
 
 
 def parse(sources: list[str]) -> list[list[list[str | int]] | str]:
@@ -879,6 +870,8 @@ def test_a_bare_or_borrowed_name_fails() -> None:
     assert not missed, "\n".join(missed)
 
 
-def test_the_parser_counts_columns_from_one() -> None:
-    # gjs 1.80 counts them from 0, and 1.88 from 1; js_nodes.js counts from 1 on either.
+def test_the_parser_counts_columns_from_one_in_characters() -> None:
+    # gjs 1.80 and 1.88 count from different origins, in different units; js_nodes.js
+    # counts from 1, in characters, on either.
     assert parse(["x;"]) == [[["code", 1, 1]]]
+    assert parse(["'\U0001d465'; x;"]) == [[["string", 1, 1], ["code", 1, 6]]]
