@@ -35,8 +35,9 @@ GNOME's own push zooms around the view's middle and pushes the pointer toward an
 - Good: zoom on and off and the zoom level are GNOME's settings, so the toggle and the
   Settings slider stay in step with the wheel.
 - Bad: the extension reaches into the magnifier's internals (`_changeROI`, the zoom region's
-  clone, `_updateCloneGeometry`, the pointer image's size, `_mouseSourceActor`, and where its
-  view lies, `_viewPortX` and its kin), which can change between GNOME releases. That is why
+  clone, `_updateCloneGeometry`, the pointer image's size, `_mouseSourceActor`, where its view
+  lies, `_viewPortX` and its kin, and whether it holds the view within the screen,
+  `_clampScrollingAtEdges`), which can change between GNOME releases. That is why
   `metadata.json` lists only the versions the `@shell` scenarios have passed on.
 
 ### Checked by
