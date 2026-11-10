@@ -27,6 +27,8 @@ const STOP_SPEED = 0.02;
 // step; faster spinning ramps up to ACCEL_MAX steps per notch.
 const ACCEL_START = 8;
 const ACCEL_RANGE = 16;
+// Wheel notches further apart than this, in seconds, begin a new spin.
+export const SPIN_GAP_S = 0.3;
 const ACCEL_MAX = 2;
 const RATE_SMOOTHING = 0.12;
 // Gaps smaller than this count as arrived.
@@ -66,7 +68,7 @@ export class ZoomMotion {
         const gap = now - this._lastWheel;
         this._lastWheel = now;
         this._lastNotches = notches;
-        if (gap > 0.3 || reversed) {
+        if (gap > SPIN_GAP_S || reversed) {
             this._wheelRate = 0;
         } else if (gap > 0) {
             const rate = Math.abs(notches) / Math.max(gap, 0.004);
