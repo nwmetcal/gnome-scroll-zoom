@@ -88,10 +88,11 @@ const now = () => GLib.get_monotonic_time() / 1e6;
 // Where a view `size` long, starting at `start`, must start to show `low` to `low + extent`,
 // moving no further than that. Something already in view leaves the view still, so a text
 // cursor moving within it never moves it; something brought in gets what room the view can
-// spare; something longer than the view keeps its start in view.
+// spare; something longer than the view keeps the view within it, so focus going into a text
+// area that already fills the view leaves the lines being read where they are.
 function shownStart(start, size, low, extent) {
     if (extent >= size)
-        return low >= start && low < start + size ? start : low;
+        return Math.min(Math.max(start, low), low + extent - size);
     if (low >= start && low + extent <= start + size)
         return start;
     const margin = Math.min(FOLLOW_MARGIN_PX, (size - extent) / 2);
@@ -110,9 +111,9 @@ export default class ScrollZoomExtension extends Extension {
         this._followPointer = false;
         this._settingActive = false;
         this._smoothing = null;
-        this._heldBox = null;
+        this._held = null;
         this._restId = 0;
-        this._pointerMovedAt = -Infinity;
+        this._pointerMovedAtS = -Infinity;
 
         this._motion = new ZoomMotion(Math.log(this._settings.get_double('max-zoom')));
         this._timeline = new Clutter.Timeline({actor: global.stage, duration: 1000, repeat_count: -1});
@@ -317,8 +318,10 @@ export default class ScrollZoomExtension extends Extension {
         if (!this._settings.get_boolean('follow-focus') || event.detail1 !== 1)
             return;
         const component = event.source.get_component_iface();
-        if (component)
-            this._bringIntoView(event.source, component.get_extents(Atspi.CoordType.WINDOW));
+        if (component) {
+            this._bringIntoView(event.source,
+                () => component.get_extents(Atspi.CoordType.WINDOW));
+        }
     }
 
     _onCaretMoved(event) {
@@ -326,25 +329,24 @@ export default class ScrollZoomExtension extends Extension {
             return;
         const text = event.source.get_text_iface();
         if (text) {
-            this._bringIntoView(text,
+            this._bringIntoView(text, () =>
                 text.get_character_extents(text.get_caret_offset(), Atspi.CoordType.WINDOW));
         }
     }
 
     // While the pointer has moved in the last second, a hand on the mouse wins, as in GNOME's
-    // own zoom. Hold only what moved last, not where to put the view, so what lands is worked
-    // out from the view and the focus as they are when the pointer rests.
-    _bringIntoView(accessible, windowExtents) {
+    // own zoom. Hold only what moved last, and look up where it is when the pointer rests, so
+    // what lands is worked out from the view and the focus as they are then: nothing, once
+    // another window has focus or its own has closed.
+    _bringIntoView(accessible, readExtents) {
         if (!this._region.isActive())
             return;
-        const box = this._region._convertExtentsToScreenSpace(accessible, windowExtents);
-        // GNOME finds no place for what is not in the focused window, and some text cursors
-        // have a place of no size.
-        if (!box || (box.width === 0 && box.height === 0))
+        const box = this._placeOf(accessible, readExtents);
+        if (!box)
             return;
-        const restLeftMs = POINTER_REST_MS - (now() - this._pointerMovedAt) * 1000;
+        const restLeftMs = POINTER_REST_MS - (now() - this._pointerMovedAtS) * 1000;
         if (restLeftMs > 0) {
-            this._heldBox = box;
+            this._held = {accessible, readExtents, window: global.display.focus_window};
             this._waitForRest(restLeftMs);
             return;
         }
@@ -352,9 +354,16 @@ export default class ScrollZoomExtension extends Extension {
         this._show(box);
     }
 
+    // Where what moved is on the screen. GNOME finds no place for what is not in the focused
+    // window, and some text cursors have a place of no size.
+    _placeOf(accessible, readExtents) {
+        const box = this._region._convertExtentsToScreenSpace(accessible, readExtents());
+        return !box || (box.width === 0 && box.height === 0) ? null : box;
+    }
+
     _onPointerMoved() {
-        this._pointerMovedAt = now();
-        if (this._heldBox)
+        this._pointerMovedAtS = now();
+        if (this._held)
             this._waitForRest(POINTER_REST_MS);
         this._queuePan();
     }
@@ -364,23 +373,27 @@ export default class ScrollZoomExtension extends Extension {
             GLib.source_remove(this._restId);
         this._restId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, Math.ceil(delayMs), () => {
             this._restId = 0;
-            const box = this._heldBox;
-            this._heldBox = null;
-            if (box)
-                this._show(box);
+            const held = this._held;
+            this._held = null;
+            // Looking it up again in a window that has closed would ask an app that is gone.
+            if (held && global.display.focus_window === held.window) {
+                const box = this._placeOf(held.accessible, held.readExtents);
+                if (box)
+                    this._show(box);
+            }
             return GLib.SOURCE_REMOVE;
         });
     }
 
     _dropHeldFollow() {
-        this._heldBox = null;
+        this._held = null;
         if (this._restId) {
             GLib.source_remove(this._restId);
             this._restId = 0;
         }
     }
 
-    // Move the view only as far as it takes to show the whole of what moved.
+    // The least move, so what was in view stays close by.
     _show(box) {
         const region = this._region;
         if (!region.isActive())
