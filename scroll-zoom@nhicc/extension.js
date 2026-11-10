@@ -77,6 +77,8 @@ const FOLLOWING = [
         GDesktopEnums.MagnifierCaretTrackingMode],
 ];
 
+const MOUSE_PUSH = GDesktopEnums.MagnifierMouseTrackingMode.PUSH;
+
 // Room following leaves around what it brings into view, in pixels of the unzoomed screen:
 // the room GNOME's own push leaves for the pointer. Less when the view has less to spare.
 const FOLLOW_MARGIN_PX = 24;
@@ -450,16 +452,19 @@ export default class ScrollZoomExtension extends Extension {
             // setMagFactor it can skip the 100 ms ease, which would fight
             // the per-frame glide.
             if (typeof region._changeROI === 'function') {
+                const centre = this._followPointer
+                    ? this._pushCentre(factor, !Main.magnifier.isActive()) : null;
                 region._changeROI({
                     xMagFactor: factor,
                     yMagFactor: factor,
+                    ...centre,
                     // A glide the wheel or touchpad started stays on the pointer all the
                     // way. GNOME's own following lasts a second after zoom comes on, so a
                     // slow spin would otherwise settle where the view was then. A level that
                     // comes in through setMagFactor, from keyboard zoom, the Settings slider,
                     // or GNOME handing back this extension's own save, keeps GNOME's way,
                     // which hands over to focus tracking.
-                    redoCursorTracking: this._followPointer || region._followingCursor,
+                    redoCursorTracking: !centre && (this._followPointer || region._followingCursor),
                     animate: false,
                 });
             } else {
@@ -475,12 +480,44 @@ export default class ScrollZoomExtension extends Extension {
     // last on, so the view would come on around wherever it was then.
     // When Super+Alt+8 or Settings turned zoom on or off, also stop any glide.
     _onActiveChanged(active) {
-        if (active)
-            this._region.scrollToMousePos();
+        if (active) {
+            const centre = this._pushCentre(this._region.getMagFactor()[0], true);
+            if (centre)
+                this._region._changeROI(centre);
+            else
+                this._region.scrollToMousePos();
+        }
         if (this._settingActive)
             return;
         this._timeline.stop();
         this._motion.reset(active ? Math.log(this._region.getMagFactor()[0]) : 0, now());
+    }
+
+    // Under GNOME's push, zooming keeps the pointer where it is drawn on the screen, so neither
+    // it nor what is under it jumps. GNOME's own push zooms around the view's middle and then
+    // pushes the pointer back into view, toward an edge. The pointer stays as near as keeps
+    // the whole of its image, which GNOME's push holds in the view, on the screen, so the view
+    // stays still as the pointer then moves; and the view stays within the screen, so zooming
+    // back toward 1x brings the pointer back to where it is. `fromOff` is for zoom coming on,
+    // when the pointer is drawn where it is. Under GNOME's other following, no centre.
+    _pushCentre(factor, fromOff) {
+        if (this._magSettings.get_enum('mouse-tracking') !== MOUSE_PUSH)
+            return null;
+        const region = this._region;
+        const pointer = global.get_pointer();
+        const roi = region.getROI();
+        const was = region.getMagFactor()[0];
+        const image = region._mouseSourceActor.get_size();
+        const screen = [global.screen_width, global.screen_height];
+        const [xCenter, yCenter] = [0, 1].map(axis => {
+            const size = screen[axis];
+            const drawn = fromOff ? pointer[axis] : (pointer[axis] - roi[axis]) * was;
+            const kept = Math.min(Math.max(drawn, 0), size - image[axis] * factor);
+            const start = Math.min(Math.max(pointer[axis] - kept / factor, 0),
+                size - size / factor);
+            return start + size / factor / 2;
+        });
+        return {xCenter, yCenter};
     }
 
     _turnOff() {
