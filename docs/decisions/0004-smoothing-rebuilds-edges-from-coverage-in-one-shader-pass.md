@@ -24,12 +24,12 @@ says how much of it the letter covers, so the edge's position comes back to a fr
 pixel, at any zoom. The copy of the screen stays at 1x inside an offscreen effect, and one
 fragment shader pass draws the zoomed view: tones from a 6x6 neighbourhood and a sparse ring
 4 pixels out, then a shape for each of the 4 nearest pixels, fitted to it and its 8
-neighbours so that it covers exactly as much of the pixel as its coverage says. The shape is a
-straight edge or a thin band across the pixel, or, where an upright edge and a flat one
+neighbours so that it covers exactly as much of the pixel as its coverage says. The shape is
+a straight edge or a thin band across the pixel, or, where an upright edge and a flat one
 meeting at a corner explain the neighbours almost exactly and clearly better, that corner; a
-pixel with no ink or all ink takes the edges its neighbours give it. The 4 shapes blend only within 0.3 of a
-pixel of their shared edges. Where the pixels are not two tones with sharp edges, it draws
-clamped bicubic instead.
+pixel with no ink or all ink takes the edges its neighbours give it. The 4 shapes blend only
+within 0.15 of a pixel either side of their shared edges. Where the pixels are not two tones
+with sharp edges, it draws clamped bicubic instead.
 
 An earlier version blended a straight edge for each of the 16 nearest pixels with cubic
 B-spline weights. Averaging the edges on both sides of a thin stroke, and the edges that meet
