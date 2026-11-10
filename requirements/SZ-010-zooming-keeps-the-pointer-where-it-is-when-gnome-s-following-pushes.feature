@@ -20,8 +20,8 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
   fill the screen, back toward where the pointer itself is. Past 6.25x the pointer at 1100,
   650 has less room than that below it, and past 7.5x to its right. Kept so, the view stays
   still as the pointer then moves within it, and a spin that zooms in deep and turns back
-  brings the pointer back as the room comes back. The pointer itself does not move. These
-  scenarios zoom with the pointer at 1100, 650, far from the screen's middle, where GNOME's
+  brings the pointer back as the room comes back. The pointer itself does not move. Most of
+  these scenarios zoom with the pointer at 1100, 650, far from the screen's middle, where GNOME's
   push left the pointer drawn 108 pixels right of and 78 pixels below where it was once zoom
   reached 3x. "Within 2 pixels" allows for the rounding of where the view sits, and a view
   staying where it was on the screen is measured times the zoom, as the screen shows it.
@@ -35,7 +35,10 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
 
   GNOME can show its zoomed view on half the screen instead (Magnifier View > Screen Area).
   There the view is that half: the pointer is drawn from the half's own corner, at its place in
-  the view times the zoom, and kept within the half as within the screen.
+  the view times the zoom, and kept within the half as within the screen. The bottom half's
+  corner is at 0, 400 and the right half's at 640, 0. A pointer at 1100, 390 is near the top
+  half's lower edge, and one at 630, 400 near the left half's right edge, so its image, grown
+  by the zoom, would run past the half if kept where it was.
 
   Scenario: The wheel turning zoom on keeps the pointer where it is
     Given GNOME's own following pushes the view at its edges
@@ -141,3 +144,37 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
     When GNOME's zoom toggle turns zoom on
     Then zoom is on
     And every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: In GNOME's zoomed view on the bottom half of the screen, the wheel keeps the pointer
+    Given GNOME's own following pushes the view at its edges
+    And GNOME's zoomed view is on the bottom half of the screen
+    And zoom is off
+    And the pointer is at 1100, 650
+    When Super is held and the wheel turns 6 notches up
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+    When Super is held and the wheel turns 3 notches up
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: In GNOME's zoomed view on the right half of the screen, its toggle keeps the pointer
+    Given GNOME's own following pushes the view at its edges
+    And GNOME's zoomed view is on the right half of the screen
+    And zoom is off
+    And the pointer is at 1000, 400
+    When GNOME's zoom toggle turns zoom on
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: Near the top half's lower edge, the wheel keeps the pointer's image within the half
+    Given GNOME's own following pushes the view at its edges
+    And GNOME's zoomed view is on the top half of the screen
+    And zoom is off
+    And the pointer is at 1100, 390
+    When Super is held and the wheel turns 6 notches up
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: Near the left half's right edge, the toggle keeps the pointer's image within the half
+    Given GNOME's own following pushes the view at its edges
+    And GNOME's zoomed view is on the left half of the screen
+    And zoom is off
+    And the pointer is at 630, 400
+    When GNOME's zoom toggle turns zoom on
+    Then every frame kept the pointer where it was on the screen, within 2 pixels

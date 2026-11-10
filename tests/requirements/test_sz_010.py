@@ -23,6 +23,8 @@ GNOME_FOLLOWING = {
 VIEW_PORTS = {
     "top half": ("top-half", (0.0, 0.0, float(SCREEN[0]), SCREEN[1] / 2)),
     "left half": ("left-half", (0.0, 0.0, SCREEN[0] / 2, float(SCREEN[1]))),
+    "bottom half": ("bottom-half", (0.0, SCREEN[1] / 2, float(SCREEN[0]), SCREEN[1] / 2)),
+    "right half": ("right-half", (SCREEN[0] / 2, 0.0, SCREEN[0] / 2, float(SCREEN[1]))),
 }
 # The pointer's image in the test shell, across and down, at 1x. GNOME's push keeps the whole
 # of it, grown by the zoom, in the view.
