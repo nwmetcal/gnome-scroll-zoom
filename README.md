@@ -27,6 +27,9 @@ text you zoomed in to read. Scroll Zoom fixes those three things.
   touchpad, a quick swipe coasts to a stop.
 - **The zoomed view follows your pointer smoothly**, in step with your display, even at
   144 Hz and above.
+- **The view stays where you put it.** GNOME's own zoom jumps to wherever keyboard focus or
+  a text cursor moves, even when a terminal prints or a window updates on its own. Scroll Zoom
+  keeps the view with your pointer, unless you turn following on.
 - **Zoomed text stays sharp.** GNOME's own zoom blurs text as it enlarges it. Scroll Zoom
   redraws letters and lines with crisp, smooth edges, and leaves photos smooth.
 - **It works with GNOME's own zoom.** The keyboard shortcuts, the Settings page, color
@@ -97,11 +100,16 @@ Open them from the **Extensions** app (Scroll Zoom > Settings), or run
 - **Zoom speed**: how far one wheel notch zooms. The default, 1.20, zooms 20% closer.
 - **Maximum zoom**: up to 32x.
 - **Reverse direction**: scroll down to zoom in.
+- **Follow keyboard focus** and **Follow the text cursor**: both off at first, so the view
+  stays with your pointer. Turned on, each brings what moved into view as you press Tab or
+  type, or as an app moves it, and moves the view only as far as it takes to show it.
 - **Smooth images**, and the **Smoothing style**: *Sharp text and lines* (the default),
   *Soft* (smooth everywhere), or *GNOME standard*.
 
 Everything in **Settings > Accessibility > Zoom** applies too, such as how the view
-follows the pointer, and color effects.
+follows the pointer, and color effects. Following keyboard focus and the text cursor is the
+exception: while Scroll Zoom is on, its own two switches decide it, and turning Scroll Zoom
+off gives GNOME's settings back.
 
 ## Questions and problems
 
