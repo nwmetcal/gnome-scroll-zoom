@@ -340,7 +340,12 @@ def sources(
     # A name held on another object, such as this._state.laters, is not read.
     held = [
         m
-        for m in re.finditer(rf"(?<![\w$.])((?:this\.)?\w+)\s*=\s*{laters}(?=\s*(?:;|\n|$))", code)
+        for m in re.finditer(
+            rf"(?<![\w$.])((?:this\.)?\w+)\s*=\s*{laters}"
+            # Its statement ends: a ;, the end, or a line the next line does not go on from.
+            r"(?=[ \t]*;|\s*$|[ \t]*\n(?!\s*[.?\[(`]))",
+            code,
+        )
         # Not after a dot, nor a second name in a chained assignment.
         if not re.search(r"(?:\.|(?<![=!<>])=)\s*$", code[: m.start(1)])
     ]
@@ -525,10 +530,9 @@ def unread(text: str, code: str, read: set[int], held: dict[str, set[int]]) -> l
             words.append((start + 1, inner))
     # A name that starts with an underscore is a private member: the extension's own, whose
     # code is read where it is written, or GNOME Shell's, such as the magnifier's
-    # _connectSignals, which undoes itself and is left to review.
-    declared = set(re.findall(r"\b(?:const|let|var)\s+([A-Za-z$][\w$]*)", bare))
+    # _connectSignals, which undoes itself and is left to review. The word pattern skips them.
     for offset, word in words:
-        if offset in read or not _counted(bare, offset, word, declared):
+        if offset in read or not _counted(bare, offset, word):
             continue
         if SIGNAL_WORD.search(word):
             found.append(f"a signal this check cannot read: {line_of(text, offset)}")
@@ -551,22 +555,28 @@ def unread(text: str, code: str, read: set[int], held: dict[str, set[int]]) -> l
     return found
 
 
-def _counted(bare: str, offset: int, word: str, declared: set[str]) -> bool:
-    """Whether a word counts: every one does but a variable the file declares under that
-    name, such as const keybindings, where it is neither called nor reached as a property.
-    A string name always counts."""
-    if bare[offset : offset + len(word)] != word or word not in declared:
+def _counted(bare: str, offset: int, word: str) -> bool:
+    """Whether a word counts: every one does but the name a const, let, or var declares with =,
+    at that declaration, such as const keybindings = [...]. Everywhere else it counts, as a
+    text check cannot see which name a use refers to. A string name always counts."""
+    if bare[offset : offset + len(word)] != word:
         return True
-    called = re.match(OPEN, bare[offset + len(word) :]) is not None
-    return called or re.search(rf"{DOT}$", bare[max(0, offset - 80) : offset]) is not None
+    declares = re.search(r"\b(?:const|let|var)\s+$", bare[max(0, offset - 20) : offset])
+    assigned = re.match(r"\s*=(?![=>])", bare[offset + len(word) :])
+    return declares is None or assigned is None
 
 
 def misread(text: str, nodes: list[list[str | int]] | str) -> list[str]:
     """Each place gjs's parser and this check's scanner disagree on: a string, template, or
-    regex the parser starts where the scanner starts none, or code the parser places where
-    the scanner sees a literal or a comment. A misread can hide code, so each one fails."""
+    regex the parser starts where the scanner starts none, a regex the scanner starts where
+    the parser starts none, or code the parser places where the scanner sees a literal or a
+    comment. A misread can hide code, so each one fails."""
     if isinstance(nodes, str):
         return [f"a file gjs cannot parse: {nodes}"]
+    # JavaScript also ends a line at \r, U+2028, and U+2029, and reads a first #! line as a
+    # comment; the scanner does neither, so such a file is not read at all.
+    if re.search("[\r\u2028\u2029]", text) or text.startswith("#!"):
+        return ["a file this check cannot read: a line break other than \\n, or a #! line"]
     spans = literals(text)
     starts = {start: kind for kind, start, _ in spans}
     lines = [0, *(index + 1 for index, char in enumerate(text) if char == "\n")]
@@ -740,6 +750,12 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "const x = this._laters = global.compositor.get_laters();\nthis._l = x.add(0, f);": (
             "a main loop source this check cannot read"
         ),
+        # A line break ends a statement only when the next line does not go on with it.
+        "const laters = global.compositor.get_laters()\n    ?.add(0, f);": "this check cannot read",
+        "this._laters = global.compositor.get_laters()\n    ['add'](0, f);": "this check cannot",
+        # JavaScript ends a line at U+2028 and U+2029 too, and a first #! line is a comment.
+        "this._id = s.connect('x', f);\n// a\u2028/*\ns.disconnect(this._id) /* */": "cannot read",
+        "#!s.disconnect(this._id)\nthis._id = s.connect('x', f);": "this check cannot read",
         # allowKeybinding changes the modes a key of GNOME's runs in, until it is set back.
         "Main.wm.allowKeybinding('switch-applications', Shell.ActionMode.ALL);": (
             "a key binding this check cannot read"
@@ -750,6 +766,10 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
     clean = """
         // connects the stage, then subscribes; a comment is not a call
         const keybindings = ['a', 'b'];
+        this._broken = global.compositor
+            .get_laters()
+            .add(0, f);
+        global.compositor.get_laters().remove(this._broken);
         const wide = '\U0001d465'; const narrow = 'a';
         const connected = true;
         this._held = global.compositor.get_laters();
@@ -861,6 +881,10 @@ BARE: tuple[str, ...] = (
     "const {timeout_add: later} = GLib;\nthis._t = later(0, 1, f);",
     "const {bus_watch_name: watch} = Gio;\nthis._w = watch(a, b);",
     "const {connect} = global.stage;\nthis._id = connect('x', f);",
+    # A name the file declares counts everywhere but at its own declaration.
+    "let connect;\n({connect} = global.stage);\nthis._id = connect.call(global.stage, 'x', f);",
+    "const connect = 1;\nfunction g(connect) {\n    this._id = connect.call(s, 'x', f);\n}",
+    "function a() {\n    const setTimeout = 1;\n    return setTimeout;\n}\nsetTimeout.call(g, f);",
 )
 
 

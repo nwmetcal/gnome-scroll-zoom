@@ -22,9 +22,11 @@ if (!UNIT)
 
 let lines = [];
 
-// The column, from 1, in characters on its line.
+// A column counted from 0 in this gjs's unit, as characters counted from 0.
 function characters(line, column) {
-    const text = lines[line - 1] ?? '';
+    const text = lines[line - 1];
+    if (text === undefined)
+        throw new Error(`the parser placed a node on line ${line}, past the source's end`);
     if (UNIT === 'characters')
         return column;
     if (UNIT === 'utf16')
@@ -80,7 +82,8 @@ function walk(node, found) {
 const [, contents] = GLib.file_get_contents(ARGV[0]);
 const sources = JSON.parse(new TextDecoder().decode(contents));
 print(JSON.stringify(sources.map(source => {
-    lines = source.split('\n');
+    // The line breaks JavaScript counts, so a line here is the parser's line.
+    lines = source.split(/\r\n|[\n\r\u2028\u2029]/);
     let ast;
     try {
         ast = Reflect.parse(source, {target: 'module'});
