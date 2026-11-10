@@ -32,11 +32,13 @@ Point = tuple[float, float]
 @dataclass
 class Drawn:
     """Where the pointer was drawn on the screen before the scenario's last zoom began, where
-    the pointer itself was, and where the view was before the pointer last moved."""
+    the pointer itself was, where the view was before the pointer last moved, and where GNOME
+    had the view's middle before zoom came on."""
 
     before: Point = (0.0, 0.0)
     pointer: Point = (0.0, 0.0)
     view_before: Point = (0.0, 0.0)
+    middle_before: Point = (0.0, 0.0)
 
 
 @pytest.fixture
@@ -121,6 +123,10 @@ def pointer_at(shell: Shell, drawn: Drawn, x: int, y: int) -> None:
     shell.wait_until(f"scrollZoomTest.state().pointer.join() === '{x},{y}'")
     drawn.before = drawn_now(shell)
     drawn.pointer = (float(x), float(y))
+    roi = state(shell)["roi"]
+    assert isinstance(roi, list)
+    left, top, width, height = (number(value) for value in roi)
+    drawn.middle_before = (left + width / 2, top + height / 2)
 
 
 @when(parsers.parse("the pointer moves {pixels:d} pixels left"))
@@ -178,16 +184,22 @@ def still_pushes(shell: Shell) -> None:
 
 
 @then(
-    parsers.parse("the view stayed where it was as the pointer moved, within {tolerance:d} pixels")
+    parsers.parse(
+        "the view stayed where it was on the screen as the pointer moved, "
+        "within {tolerance:d} pixels"
+    )
 )
 def view_stayed(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> None:
     bx, by = drawn.view_before
-    places = [point(frame["roi"]) for frame in scene.frames]
-    places.append(point(state(shell)["roi"]))
-    moved = max(max(abs(x - bx), abs(y - by)) for x, y in places)
+    moved = 0.0
+    for frame in [*scene.frames, state(shell)]:
+        x, y = point(frame["roi"])
+        # As the screen shows it: a view moved one pixel of the unzoomed screen moves everything
+        # on the screen by the zoom.
+        moved = max(moved, max(abs(x - bx), abs(y - by)) * number(frame["zoom"]))
     assert moved <= tolerance, (
-        f"the view moved {moved:.1f} pixels from {bx:.1f}, {by:.1f} as the pointer moved, "
-        f"over {len(places) - 1} frames and where it rests at the end"
+        f"the view moved {moved:.1f} pixels on the screen as the pointer moved, over "
+        f"{len(scene.frames)} frames and where it rests at the end"
     )
 
 
@@ -241,17 +253,27 @@ def proportional(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> No
     )
 
 
-@then(parsers.parse("every frame kept the view's middle where it was, within {tolerance:d} pixels"))
-def middle_kept(shell: Shell, scene: Scene, tolerance: int) -> None:
+@then(
+    parsers.parse(
+        "every frame kept the view's middle where GNOME had it, within {tolerance:d} pixels"
+    )
+)
+def middle_kept(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> None:
     frames = [frame for frame in [*scene.frames, state(shell)] if frame["on"] is True]
     assert frames, "no frame was drawn with zoom on"
-    middles: list[Point] = []
+    # GNOME keeps where it put the view's middle at the zoom before, so the middle moves only as
+    # far as each zoom's view needs to stay within the screen.
+    expected = list(drawn.middle_before)
+    worst = 0.0
     for frame in frames:
         left, top = point(frame["roi"])
         factor = number(frame["zoom"])
-        middles.append((left + SCREEN[0] / factor / 2, top + SCREEN[1] / factor / 2))
-    fx, fy = middles[0]
-    moved = max(max(abs(x - fx), abs(y - fy)) for x, y in middles)
-    assert moved <= tolerance, (
-        f"the view's middle moved {moved:.1f} pixels from {fx:.1f}, {fy:.1f} as zoom changed"
+        for axis, start in ((0, left), (1, top)):
+            half = SCREEN[axis] / factor / 2
+            expected[axis] = min(max(expected[axis], half), SCREEN[axis] - half)
+            worst = max(worst, abs(start + half - expected[axis]))
+    mx, my = drawn.middle_before
+    assert worst <= tolerance, (
+        f"the view's middle was {worst:.1f} pixels from where GNOME had it, {mx:.1f}, {my:.1f}, "
+        f"over {len(frames)} frames with zoom on"
     )

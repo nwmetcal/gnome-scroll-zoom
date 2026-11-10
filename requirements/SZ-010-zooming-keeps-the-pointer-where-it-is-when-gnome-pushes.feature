@@ -22,7 +22,13 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
   still as the pointer then moves within it. The pointer itself does not move. These
   scenarios zoom with the pointer at 1100, 650, far from the screen's middle, where GNOME's
   push left the pointer drawn 108 pixels right of and 78 pixels below where it was once zoom
-  reached 3x. "Within 2 pixels" allows for the rounding of where the view sits.
+  reached 3x. "Within 2 pixels" allows for the rounding of where the view sits, and a view
+  staying where it was on the screen is measured times the zoom, as the screen shows it.
+
+  Under GNOME's following that moves with the contents, the view sits where GNOME Shell 50's
+  own magnifier puts it for the pointer's place on the screen. Under no following, the view's
+  middle stays where GNOME had it before zoom came on, as far as the view at each zoom can
+  stay within the screen, since GNOME keeps where it put the view's middle at the zoom before.
 
   Scenario: The wheel turning zoom on keeps the pointer where it is
     Given GNOME's own following pushes the view at its edges
@@ -39,7 +45,7 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
     And the pointer is at 1100, 650
     When Super is held and the wheel turns 6 notches up
     And the pointer moves 100 pixels left
-    Then the view stayed where it was as the pointer moved, within 2 pixels
+    Then the view stayed where it was on the screen as the pointer moved, within 2 pixels
     When Super is held and the wheel turns 3 notches up
     Then every frame kept the pointer where it was on the screen, within 2 pixels
     When Super is held and the wheel turns 3 notches down
@@ -54,7 +60,7 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
     Then zoom is on at 20x
     And every frame kept the pointer where it was on the screen, within 2 pixels
     When the pointer moves 10 pixels left
-    Then the view stayed where it was as the pointer moved, within 2 pixels
+    Then the view stayed where it was on the screen as the pointer moved, within 2 pixels
 
   Scenario: A touchpad swipe in and back out keeps the pointer where it is
     Given GNOME's own following pushes the view at its edges
@@ -86,4 +92,18 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
     And zoom is off
     And the pointer is at 1100, 650
     When Super is held and the wheel turns 6 notches up
-    Then every frame kept the view's middle where it was, within 2 pixels
+    Then every frame kept the view's middle where GNOME had it, within 2 pixels
+
+  Scenario: Under GNOME's following that moves with the contents, its toggle goes where it says
+    Given GNOME's own following moves the view with its contents
+    And zoom is off
+    And the pointer is at 1100, 650
+    When GNOME's zoom toggle turns zoom on
+    Then every frame had the view where GNOME's moving with the contents puts it, within 2 pixels
+
+  Scenario: Under no following of GNOME's, its toggle keeps the view's middle where it is
+    Given GNOME's own following follows nothing
+    And zoom is off
+    And the pointer is at 1100, 650
+    When GNOME's zoom toggle turns zoom on
+    Then every frame kept the view's middle where GNOME had it, within 2 pixels
