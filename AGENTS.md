@@ -30,13 +30,15 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
 ## Code map
 
 - `scroll-zoom@nhicc/` is the extension. `extension.js` reads the scroll keys and the wheel,
-  runs the glide each frame, and moves the view with the pointer. `zoomMotion.js` is the glide
-  physics and imports nothing of GNOME Shell. `smoothing.js` is the shader that redraws the
-  zoomed view. `prefs.js` is the settings window; `schemas/` its settings.
+  runs the glide each frame, moves the view with the pointer, and decides whether the view
+  follows keyboard focus and the text cursor. `zoomMotion.js` is the glide physics and imports
+  nothing of GNOME Shell. `smoothing.js` is the shader that redraws the zoomed view. `prefs.js`
+  is the settings window; `schemas/` its settings.
 - `requirements/` holds the features. `tests/` holds their steps, in `tests/requirements/`,
   and the rest of the tests, in `tests/unit/` and `tests/style/`; `tests/shell.py` and
-  `tests/shell_harness.js` drive the test shell, and `tests/full_screen_app.js` is the
-  full-screen app SZ-008 zooms over.
+  `tests/shell_harness.js` drive the test shell, `tests/full_screen_app.js` is the
+  full-screen app SZ-008 zooms over, and `tests/focus_app.js` the app whose focus and text
+  cursor SZ-009 follows.
 - `dev/` holds the private test shell, the test window, and the capture tools for comparing
   smoothing by eye.
 - `tools/` holds the repository's own tools: the commit rules, the intent check, the review
@@ -158,4 +160,4 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | A shell script passes shellcheck | `tests/style/test_shell.py` |
 | No `Any`; a function's types are complete | ruff (`ANN`, `TID251`) and pyright strict, in `make check` |
 | Steps observe what a person would, never internals; a requirement made true failed on main first; a scenario is never edited to pass; one behavior a pull request; comments say why; errors propagate | review: the requirements and rules lenses |
-| The extension hands zoom back to GNOME when turned off, and writes no setting but its own and GNOME's zoom on/off and level | SZ-006; review: the correctness lens |
+| The extension hands zoom back to GNOME when turned off, and writes no setting but its own and GNOME's zoom on/off and level | SZ-006; SZ-009, for following focus and the text cursor; review: the correctness lens |

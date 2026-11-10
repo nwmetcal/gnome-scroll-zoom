@@ -53,6 +53,16 @@
       <summary>Where rebuilt edges sit between the dark and light tone</summary>
       <description>Above 0.5 makes dark text on a light background bolder; below 0.5 makes it thinner.</description>
     </key>
+    <key name="follow-focus" type="b">
+      <default>false</default>
+      <summary>Bring keyboard focus into view</summary>
+      <description>When keyboard focus moves out of the zoomed view, move the view only as far as it takes to show it. Off leaves the view with the pointer, whatever GNOME's own focus tracking setting says.</description>
+    </key>
+    <key name="follow-text-cursor" type="b">
+      <default>false</default>
+      <summary>Bring the text cursor into view</summary>
+      <description>When a text cursor moves out of the zoomed view, by typing or by an app on its own, move the view only as far as it takes to show it. Off leaves the view with the pointer, whatever GNOME's own text cursor tracking setting says.</description>
+    </key>
     <key name="toggle-smooth-images" type="as">
       <default><![CDATA[['<Super><Alt>backslash']]]></default>
       <summary>Turn image smoothing on or off</summary>
