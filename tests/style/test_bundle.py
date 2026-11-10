@@ -321,7 +321,9 @@ def glib_names(text: str) -> list[str]:
     return sorted({"GLib", *names})
 
 
-def sources(code: str) -> tuple[list[tuple[str, tuple[str, ...]]], set[int], dict[str, int]]:
+def sources(
+    code: str,
+) -> tuple[list[tuple[str, tuple[str, ...]]], set[int], dict[str, set[int]]]:
     """Each way the file adds a main loop source, with a group for the word that adds it and
     the ways to remove one kept in a member; where it reads get_laters() outside an add; and
     each name that holds get_laters(), with where it is assigned."""
@@ -332,7 +334,8 @@ def sources(code: str) -> tuple[list[tuple[str, tuple[str, ...]]], set[int], dic
         found.append((rf"\b{glib}{DOT}(?P<name>(?:{adders})(?:_once)?){OPEN}", removes))
     laters = rf"\bglobal{DOT}compositor{DOT}(?P<laters>get_laters){OPEN}\)"
     # A name holds get_laters() itself only when nothing is reached through the call's result.
-    held = list(re.finditer(rf"((?:this\.)?\w+)\s*=\s*{laters}(?!\s*[.?\[])", code))
+    # A name held on another object, such as this._state.laters, is not read.
+    held = list(re.finditer(rf"(?<![\w$.])((?:this\.)?\w+)\s*=\s*{laters}(?!\s*[.?\[])", code))
     names = [m.group(1) for m in held]
     read = {m.start("laters") for m in held}
     read |= {m.start("laters") for m in re.finditer(rf"{laters}{DOT}remove{OPEN}", code)}
@@ -343,7 +346,10 @@ def sources(code: str) -> tuple[list[tuple[str, tuple[str, ...]]], set[int], dic
     found.append(
         (rf"\b(?P<name>setTimeout|setInterval){OPEN}", ("clearTimeout({})", "clearInterval({})"))
     )
-    return found, read, {m.group(1): m.start(1) for m in held}
+    assigned: dict[str, set[int]] = {}
+    for m in held:
+        assigned.setdefault(m.group(1), set()).add(m.start(1))
+    return found, read, assigned
 
 
 def arguments(text: str, opening: int) -> list[str]:
@@ -373,7 +379,9 @@ def arguments(text: str, opening: int) -> list[str]:
 SIGNAL_WORD = re.compile(r"(?<!dis)connect|(?<!un)subscribe|(?<!un)(?:watch|own)_name", re.I)
 SOURCE_WORD = re.compile(r"\w+_add\w*|\w+_source_new\w*|attach|setTimeout|setInterval")
 # Words that bind a key: a lower-case name, so a type such as Meta.KeyBindingFlags is not one.
-KEY_WORD = re.compile(r"(?!remove)[a-z]\w*(?i:keybinding)\w*|grab\w*(?i:accelerator)\w*")
+KEY_WORD = re.compile(
+    r"(?!remove|allow|get_)(?=[a-z])\w*(?i:keybinding)\w*|grab\w*(?i:accelerator)\w*"
+)
 
 
 # Words after which a / starts a regex literal rather than a division.
@@ -389,6 +397,8 @@ def literals(text: str) -> list[tuple[str, int, int]]:
     spans: list[tuple[str, int, int]] = []
     templates: list[int] = []
     depth, last, word, index = 0, "", "", 0
+    # The two characters before, so a / after n++ or n-- reads as the division it is.
+    before = ""
     while index < len(text):
         char = text[index]
         if text.startswith("//", index):
@@ -422,8 +432,11 @@ def literals(text: str) -> list[tuple[str, int, int]]:
                 spans.append(("template", index, min(end + 1, len(text))))
                 index, last, word = end + 1, "a", ""
             continue
-        if char == "/" and (
-            not last or last in "(,=:[!&|?{};+-*%<>~^" or word in REGEX_AFTER_WORDS
+        postfix = before in ("++", "--")
+        if (
+            char == "/"
+            and not postfix
+            and (not last or last in "(,=:[!&|?{};+-*%<>~^" or word in REGEX_AFTER_WORDS)
         ):
             end = _regex_end(text, index + 1)
             spans.append(("regex", index, end))
@@ -433,6 +446,7 @@ def literals(text: str) -> list[tuple[str, int, int]]:
         if not char.isspace():
             word = word + char if char.isalnum() or char in "_$" else ""
             last = char
+            before = (before + char)[-2:]
         index += 1
     return spans
 
@@ -483,7 +497,7 @@ def code_only(text: str, strings: bool = True) -> str:
     return "".join(chars)
 
 
-def unread(text: str, code: str, read: set[int], held: dict[str, int]) -> list[str]:
+def unread(text: str, code: str, read: set[int], held: dict[str, set[int]]) -> list[str]:
     """Each place that connects, subscribes, adds a source, or binds a key in a form undone()
     does not read: every such word outside a comment where undone() read none, in a string or
     before .call included; each use of a name holding get_laters() but its assignment and its
@@ -510,7 +524,7 @@ def unread(text: str, code: str, read: set[int], held: dict[str, int]) -> list[s
     for name, assigned in held.items():
         for m in re.finditer(rf"(?<![\w$.]){re.escape(name)}(?![\w$])", bare):
             used = re.match(rf"{DOT}(?:add|remove){OPEN}", bare[m.end() :]) is not None
-            if m.start() != assigned and not used:
+            if m.start() not in assigned and not used:
                 found.append(
                     f"a main loop source this check cannot read: {line_of(text, m.start())}"
                 )
@@ -608,11 +622,20 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "this._id = global.stage.connect('x', f);\nlog('global.stage.disconnect(this._id)');": (
             "global.stage is never disconnected from this._id"
         ),
+        # get_laters() held on another object is not read.
+        "o.laters = global.compositor.get_laters();\no.laters.add(0, f);": "this check cannot",
+        "this._s.laters = global.compositor.get_laters();\nthis._l = this._s.laters.add(0, f);": (
+            "a main loop source this check cannot read"
+        ),
     }
     for code, problem in left.items():
         assert any(problem in found for found in undone(code)), (code, undone(code))
     clean = """
         // connects the stage, then subscribes; a comment is not a call
+        Main.wm.allowKeybinding('k', 0);
+        const action = global.display.get_keybinding_action(0, 0);
+        this._enableLaters();
+        this._disableLaters();
         const pattern = /connect|\\/\\*/;
         const half = width / 2 / scale;
         const label = `a ${half / 2} b`;
@@ -670,9 +693,16 @@ FAMILIES = (
     ("", "Main.wm", "addKeybinding"),
     ("", "global.display", "add_keybinding"),
     ("", "global.display", "grab_accelerator"),
+    ("", "GLib", "timeout_add_seconds"),
     ("", "global", "setTimeout"),
+    ("", "global", "setInterval"),
+    ("", "global.compositor.get_laters()", "add"),
     ("const laters = global.compositor.get_laters();\n", "laters", "add"),
     ("this._laters = global.compositor.get_laters();\n", "this._laters", "add"),
+    ("", "Main.wm", "setCustomKeybindingHandler"),
+    ("", "Meta", "keybindings_set_custom_handler"),
+    ("", "Gio.DBus.session", "signal_subscribe"),
+    ("", "Gio.DBus", "watch_name"),
 )
 
 
@@ -684,6 +714,9 @@ def forms(receiver: str, name: str) -> list[str]:
         f"{receiver}.{name}.apply({receiver}, args);",
         f"{receiver}?.{name}(a, b);",
         f"{receiver}.{escaped}(a, b);",
+        # A division after n++ or n-- is not a regex, and hides nothing after it.
+        f"const h = n++ / 2; {receiver}.{name}(a, b);",
+        f"const h = n-- / 2; {receiver}.{name}(a, b);",
     ]
 
 
