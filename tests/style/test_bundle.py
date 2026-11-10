@@ -5,6 +5,7 @@ its guidelines a file check can see: https://gjs.guide/extensions/review-guideli
 import json
 import re
 import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from datetime import date
@@ -55,8 +56,9 @@ OPEN = r"\s*\("
 KEYBINDINGS = {"addKeybinding": "removeKeybinding", "add_keybinding": "remove_keybinding"}
 # undone() reads a call as plain code writes it, and marks where it read each one. A word that
 # connects a signal, adds a main loop source, or binds a key anywhere else fails the check, as
-# do the other forms it knows: a string name, .call, .apply, and ?.. A name spelled to hide it
-# from a text check, such as an escape in a string or a joined string, is left to review.
+# do the other forms it knows: a string name, .call, .apply, ?., and a held laters name. A
+# name spelled to hide it from a text check, such as an escape in a string or a joined string,
+# is left to review. gjs's own parser checks the scanner each part of this relies on.
 GLIB_SOURCES = ("timeout_add", "timeout_add_seconds", "idle_add")
 
 
@@ -266,7 +268,7 @@ def undone(text: str) -> list[str]:
             "never ungrabs",
         ),
     ):
-        found += _kept_and_undone(code, flat, read, call, undo, what, never)
+        found += _kept_and_undone(text, code, flat, read, call, undo, what, never)
     for m in re.finditer(rf"([\w.()]+?){DOT}(connectObject){OPEN}", code):
         read.add(m.start(2))
         owner = re.sub(r"\s+", "", (arguments(code, m.end() - 1) or [""])[-1])
@@ -296,7 +298,7 @@ def undone(text: str) -> list[str]:
 
 
 def _kept_and_undone(
-    code: str, flat: str, read: set[int], call: str, undo: str, what: str, never: str
+    text: str, code: str, flat: str, read: set[int], call: str, undo: str, what: str, never: str
 ) -> list[str]:
     """Each call whose id is not kept in a member, or whose kept id is never undone."""
     found: list[str] = []
@@ -307,7 +309,7 @@ def _kept_and_undone(
     for m in re.finditer(call, code):
         read.add(m.start(1))
         if m.end() not in kept:
-            found.append(f"{what} is not kept: {line_of(code, m.start())}")
+            found.append(f"{what} is not kept: {line_of(text, m.start())}")
     for member, receiver in kept.values():
         if f"{receiver}.{undo}({member})" not in flat:
             found.append(f"{receiver} {never} {member}")
@@ -335,7 +337,11 @@ def sources(
     laters = rf"\bglobal{DOT}compositor{DOT}(?P<laters>get_laters){OPEN}\)"
     # A name holds get_laters() itself only when nothing is reached through the call's result.
     # A name held on another object, such as this._state.laters, is not read.
-    held = list(re.finditer(rf"(?<![\w$.])((?:this\.)?\w+)\s*=\s*{laters}(?!\s*[.?\[])", code))
+    held = [
+        m
+        for m in re.finditer(rf"(?<![\w$.])((?:this\.)?\w+)\s*=\s*{laters}(?!\s*[.?\[])", code)
+        if not re.search(r"\.\s*$", code[: m.start(1)])
+    ]
     names = [m.group(1) for m in held]
     read = {m.start("laters") for m in held}
     read |= {m.start("laters") for m in re.finditer(rf"{laters}{DOT}remove{OPEN}", code)}
@@ -379,9 +385,7 @@ def arguments(text: str, opening: int) -> list[str]:
 SIGNAL_WORD = re.compile(r"(?<!dis)connect|(?<!un)subscribe|(?<!un)(?:watch|own)_name", re.I)
 SOURCE_WORD = re.compile(r"\w+_add\w*|\w+_source_new\w*|attach|setTimeout|setInterval")
 # Words that bind a key: a lower-case name, so a type such as Meta.KeyBindingFlags is not one.
-KEY_WORD = re.compile(
-    r"(?!remove|allow|get_)(?=[a-z])\w*(?i:keybinding)\w*|grab\w*(?i:accelerator)\w*"
-)
+KEY_WORD = re.compile(r"(?!remove|get_)(?=[a-z])\w*(?i:keybinding)\w*|grab\w*(?i:accelerator)\w*")
 
 
 # Words after which a / starts a regex literal rather than a division.
@@ -393,12 +397,14 @@ REGEX_AFTER_WORDS = {
 
 def literals(text: str) -> list[tuple[str, int, int]]:
     """Each comment, string, template text, and regex literal in a JavaScript file, as its
-    kind and the span of its whole text. A template's ${...} parts are code, and read as code."""
+    kind and the span of its whole text. A template's ${...} parts are code, and read as code.
+    A string, regex, or comment that does not close where JavaScript needs it to is reported
+    as "unclosed": the scanner read something code cannot be, so it may hide code."""
     spans: list[tuple[str, int, int]] = []
     templates: list[int] = []
-    depth, last, word, index = 0, "", "", 0
-    # The two characters before, so a / after n++ or n-- reads as the division it is.
-    before = ""
+    depth, last, word, index, dotted = 0, "", "", 0, False
+    # Where the last literal ended, so a ++ or -- counts only when it is code.
+    code_from = 0
     while index < len(text):
         char = text[index]
         if text.startswith("//", index):
@@ -409,14 +415,16 @@ def literals(text: str) -> list[tuple[str, int, int]]:
             continue
         if text.startswith("/*", index):
             end = text.find("*/", index + 2)
-            end = len(text) if end < 0 else end + 2
-            spans.append(("comment", index, end))
-            index = end
+            closed = end >= 0
+            end = end + 2 if closed else len(text)
+            spans.append(("comment" if closed else "unclosed", index, end))
+            index = code_from = end
             continue
         if char in "'\"":
             end = _closing(text, index + 1, char)
-            spans.append(("string", index, end))
-            index, last, word = end, "a", ""
+            closed = text[end - 1] == char and end - 1 > index
+            spans.append(("string" if closed else "unclosed", index, end))
+            index, last, word, code_from = end, "a", "", end
             continue
         if char == "`" or (char == "}" and templates and templates[-1] == depth):
             if char == "}":
@@ -427,26 +435,27 @@ def literals(text: str) -> list[tuple[str, int, int]]:
             if text.startswith("${", end):
                 spans.append(("template", index, end + 2))
                 templates.append(depth)
-                index, last, word = end + 2, "(", ""
+                index, last, word, code_from = end + 2, "(", "", end + 2
             else:
                 spans.append(("template", index, min(end + 1, len(text))))
-                index, last, word = end + 1, "a", ""
+                index, last, word, code_from = end + 1, "a", "", end + 1
             continue
-        postfix = before in ("++", "--")
-        if (
-            char == "/"
-            and not postfix
-            and (not last or last in "(,=:[!&|?{};+-*%<>~^" or word in REGEX_AFTER_WORDS)
-        ):
-            end = _regex_end(text, index + 1)
-            spans.append(("regex", index, end))
-            index, last, word = end, "a", ""
+        # A / after n++ or n-- is a division: the two characters stand together in code.
+        previous = len(text[:index].rstrip()) - 1
+        postfix = previous - 1 >= code_from and text[previous - 1 : previous + 1] in ("++", "--")
+        keyword = word in REGEX_AFTER_WORDS and not dotted
+        if char == "/" and not postfix and (not last or last in "(,=:[!&|?{};+-*%<>~^" or keyword):
+            end, closed = _regex_end(text, index + 1)
+            spans.append(("regex" if closed else "unclosed", index, end))
+            index, last, word, code_from = end, "a", "", end
             continue
         depth += {"{": 1, "}": -1}.get(char, 0)
         if not char.isspace():
-            word = word + char if char.isalnum() or char in "_$" else ""
+            named = char.isalnum() or char in "_$"
+            # A word just after a dot is a property's name, such as this._size.in.
+            dotted = dotted if word and named else last == "."
+            word = word + char if named else ""
             last = char
-            before = (before + char)[-2:]
         index += 1
     return spans
 
@@ -457,21 +466,22 @@ def _closing(text: str, index: int, quote: str) -> int:
     return min(index + 1, len(text))
 
 
-def _regex_end(text: str, index: int) -> int:
-    in_class = False
+def _regex_end(text: str, index: int) -> tuple[int, bool]:
+    """Where the regex literal whose text starts at index ends, and whether it closed."""
+    in_class, closed = False, False
     while index < len(text) and text[index] != "\n":
         char = text[index]
         if char == "\\":
             index += 2
             continue
         if char == "/" and not in_class:
-            index += 1
+            index, closed = index + 1, True
             break
         in_class = (in_class or char == "[") and char != "]"
         index += 1
     while index < len(text) and text[index].isalpha():
         index += 1
-    return index
+    return index, closed
 
 
 def without_calls_in_strings(text: str, code: str) -> str:
@@ -515,7 +525,7 @@ def unread(text: str, code: str, read: set[int], held: dict[str, set[int]]) -> l
     # code is read where it is written, or GNOME Shell's, such as the magnifier's
     # _connectSignals, which undoes itself and is left to review.
     for offset, word in words:
-        if offset in read:
+        if offset in read or not _call_or_property(bare, offset, word):
             continue
         if SIGNAL_WORD.search(word):
             found.append(f"a signal this check cannot read: {line_of(text, offset)}")
@@ -525,14 +535,69 @@ def unread(text: str, code: str, read: set[int], held: dict[str, set[int]]) -> l
             found.append(f"a key binding this check cannot read: {line_of(text, offset)}")
     for name, assigned in held.items():
         for m in re.finditer(rf"(?<![\w$.]){re.escape(name)}(?![\w$])", bare):
-            used = re.match(rf"{DOT}(?:add|remove){OPEN}", bare[m.end() :]) is not None
+            used = re.match(rf"{DOT}(?:add|remove){OPEN}|\s*=(?!=)", bare[m.end() :]) is not None
             if m.start() not in assigned and not used:
                 found.append(
                     f"a main loop source this check cannot read: {line_of(text, m.start())}"
                 )
     for m in re.finditer(r"\\u", bare):
         found.append(f"a name this check cannot read: {line_of(text, m.start())}")
+    for kind, start, _ in literals(text):
+        if kind == "unclosed":
+            found.append(f"a line this check cannot read: {line_of(text, start)}")
     return found
+
+
+def _call_or_property(bare: str, offset: int, word: str) -> bool:
+    """Whether a word in code is called or reached as a property, so a variable of that name,
+    such as keybindings or connected, is not taken for a call. A string name always counts."""
+    if bare[offset : offset + len(word)] != word:
+        return True
+    after = re.match(OPEN, bare[offset + len(word) :]) is not None
+    return after or re.search(rf"{DOT}$", bare[max(0, offset - 80) : offset]) is not None
+
+
+def misread(text: str, nodes: list[list[str | int]] | str) -> list[str]:
+    """Each place gjs's parser and this check's scanner disagree on: a string, template, or
+    regex the parser starts where the scanner starts none, or code the parser places where
+    the scanner sees a literal or a comment. A misread can hide code, so each one fails."""
+    if isinstance(nodes, str):
+        return [f"a file gjs cannot parse: {nodes}"]
+    spans = literals(text)
+    starts = {start: kind for kind, start, _ in spans}
+    lines = [0, *(index + 1 for index, char in enumerate(text) if char == "\n")]
+    found: list[str] = []
+    for kind, line, column in nodes:
+        offset = lines[int(line) - 1] + int(column) - 1
+        if kind != "code":
+            # The parser gives a template with no ${...} as a string.
+            plain = kind == "string" and text[offset : offset + 1] == "`"
+            agrees = starts.get(offset) == ("template" if plain else kind)
+        else:
+            agrees = not any(start <= offset < end for _, start, end in spans)
+        if not agrees:
+            found.append(f"a line this check cannot read: {line_of(text, offset)}")
+    return found
+
+
+def parse(sources: list[str]) -> list[list[list[str | int]] | str]:
+    """What gjs's parser finds in each source, by tests/style/js_nodes.js."""
+    with tempfile.TemporaryDirectory() as folder:
+        listed = Path(folder) / "sources.json"
+        listed.write_text(json.dumps(sources))
+        done = subprocess.run(
+            ["gjs", "-m", str(ROOT / "tests" / "style" / "js_nodes.js"), str(listed)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    found: list[list[list[str | int]] | str] = json.loads(done.stdout)
+    return found
+
+
+def checked(sources: list[str]) -> list[list[str]]:
+    """undone() for each source, with each place the scanner misread it."""
+    return [undone(s) + misread(s, nodes) for s, nodes in zip(sources, parse(sources), strict=True)]
 
 
 def line_of(text: str, offset: int) -> str:
@@ -541,10 +606,12 @@ def line_of(text: str, offset: int) -> str:
 
 
 def test_disable_undoes_every_signal_source_and_keybinding() -> None:
+    names = loaded("extension.js")
+    texts = [(EXTENSION / name).read_text() for name in names]
     found = [
         f"{name}: {problem}"
-        for name in loaded("extension.js")
-        for problem in undone((EXTENSION / name).read_text())
+        for name, problems in zip(names, checked(texts), strict=True)
+        for problem in problems
     ]
     assert not found, "\n".join(found)
 
@@ -629,12 +696,42 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "this._s.laters = global.compositor.get_laters();\nthis._l = this._s.laters.add(0, f);": (
             "a main loop source this check cannot read"
         ),
+        # A regex after a string and a +, or after n++ +, is a regex, not a division.
+        "const re = RegExp(a + '|' + /\\d+/.source); this._id = global.stage.connect('x', f);": (
+            "global.stage is never disconnected from this._id"
+        ),
+        "const re = RegExp(a + `|` + /\\d+/.source); this._id = global.stage.connect('x', f);": (
+            "global.stage is never disconnected from this._id"
+        ),
+        "const s = n++ + /\\d+/.source; this._id = global.stage.connect('x', f);": (
+            "global.stage is never disconnected from this._id"
+        ),
+        "const s = a + +/\\d+/.exec(t)[0]; this._id = global.stage.connect('x', f);": (
+            "global.stage is never disconnected from this._id"
+        ),
+        # A regex the scanner takes for a division leaves code it cannot be, and fails.
+        "if (ok) /\\d+/.test(s); this._id = global.stage.connect('x', f);": "this check cannot",
+        "if (ok) /'/.test(s); this._id = global.stage.connect('x', f);": "this check cannot",
+        "if (p) /\\/\\//.test(p); this._id = global.stage.connect('x', f);": "this check cannot",
+        # A property named in or of is not the keyword a regex may follow.
+        "const r = this._size.in / 2; this._id = global.stage.connect('x', f);": (
+            "global.stage is never disconnected from this._id"
+        ),
+        # allowKeybinding changes the modes a key of GNOME's runs in, until it is set back.
+        "Main.wm.allowKeybinding('switch-applications', Shell.ActionMode.ALL);": (
+            "a key binding this check cannot read"
+        ),
     }
-    for code, problem in left.items():
-        assert any(problem in found for found in undone(code)), (code, undone(code))
+    for (code, problem), found in zip(left.items(), checked(list(left)), strict=True):
+        assert any(problem in each for each in found), (code, found)
     clean = """
         // connects the stage, then subscribes; a comment is not a call
-        Main.wm.allowKeybinding('k', 0);
+        const keybindings = ['a', 'b'];
+        const connected = true;
+        this._held = global.compositor.get_laters();
+        this._heldLater = this._held.add(0, f);
+        this._held.remove(this._heldLater);
+        this._held = null;
         const action = global.display.get_keybinding_action(0, 0);
         this._enableLaters();
         this._disableLaters();
@@ -681,7 +778,7 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         global.display.remove_keybinding('d');
         global.display.ungrab_accelerator(this._key);
     """
-    assert undone(clean) == []
+    assert checked([clean]) == [[]]
 
 
 # The forms of a call found to slip by, tried on every kind of call the check reads, so what a
@@ -723,10 +820,8 @@ def forms(receiver: str, name: str) -> list[str]:
 
 
 def test_every_form_found_fails_for_every_kind_of_call() -> None:
-    missed = [
-        before + form
-        for before, receiver, name in FAMILIES
-        for form in forms(receiver, name)
-        if not undone(before + form)
+    sources = [
+        before + form for before, receiver, name in FAMILIES for form in forms(receiver, name)
     ]
+    missed = [source for source, found in zip(sources, checked(sources), strict=True) if not found]
     assert not missed, "\n".join(missed)
