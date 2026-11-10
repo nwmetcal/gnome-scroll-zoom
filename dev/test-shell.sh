@@ -125,5 +125,5 @@ client)
     test_env setsid "$@" >> "$ROOT/client.log" 2>&1 &
     ;;
 log) cat "$ROOT/shell.log" ;;
-*) sed -n '2,15p' "$0"; exit 1 ;;
+*) sed -n '3,/^set -euo pipefail/{/^set -euo pipefail/!p}' "$0"; exit 1 ;;
 esac
