@@ -76,4 +76,4 @@ To add one, on a branch, add its major to `shell-version` and run `make test-she
 machine whose `gnome-shell --version` reports it; the test shell refuses a major
 `metadata.json` does not list. Fix what fails, merge once it passes on the stable release,
 and release it. The same change updates each place that names a GNOME major, which
-`tests/style/test_gnome_versions.py` finds.
+`tests/style/test_gnome_versions.py` finds, whether a major was added or dropped.

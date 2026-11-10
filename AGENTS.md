@@ -145,7 +145,8 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | No tracked file over 1 MB | `tests/style/test_sizes.py` |
 | The bundle holds only what the extension loads, metadata and a schema the site takes, and each process's own libraries; every signal, main loop source, and keybinding is undone | `tests/style/test_bundle.py` |
 | `shell-version` lists only whole majors released by the date, counted as the site's analyzer counts them, and the test shell runs only on one it lists | `tests/style/test_bundle.py`; `gnome_shell_refusal` in `tests/shell.py` |
-| Each GNOME major a page or tool names, outside the decisions, is one `metadata.json` lists | `tests/style/test_gnome_versions.py` |
+| Each GNOME major a page or tool names, outside the decisions, is one `metadata.json` lists, and each line saying which GNOME Scroll Zoom needs names every major it lists | `tests/style/test_gnome_versions.py` |
+| A distribution named for a GNOME major changes with it | review: the rules lens |
 | A change to `shell-version` says in its description which GNOME Shell its `make test-shell` passed on | review: the rules lens |
 | An upload to extensions.gnome.org sends what `gnome-extensions upload` sends, and never prints the password or token | `tests/unit/test_ego.py` |
 | A step crops only boxes wholly on its screenshot, so it never judges an empty crop | `crop` in `tests/images.py`, held by `tests/unit/test_images.py` |

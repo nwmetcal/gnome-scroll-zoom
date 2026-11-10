@@ -40,10 +40,11 @@ them GNOME's own zoom.
   each GNOME the newest version that lists it.
 - A change to `shell-version` is a release: bump `version-name`, tag it, and the `release`
   workflow publishes it.
-- The same change updates each place outside `docs/decisions/` that names a GNOME major:
-  `tests/style/test_gnome_versions.py` fails until each names one `metadata.json` lists. A
+- The same change updates each place outside `docs/decisions/` that names a GNOME major.
+  `tests/style/test_gnome_versions.py` fails until each names one `metadata.json` lists, and
+  until each line that says which GNOME Scroll Zoom needs names every major it lists. A
   distribution named for that GNOME, as Ubuntu 26.04 is in the README's "What you need",
-  changes with it.
+  changes with it; review checks that.
 
 ### Consequences
 
@@ -59,7 +60,8 @@ them GNOME's own zoom.
 `tests/style/test_bundle.py` refuses an entry that is not a whole major, or that the date
 says is not released yet, counted as the site's own analyzer counts it: from the first of
 March or September. `tests/style/test_gnome_versions.py` refuses a page or tool that names a
-major `metadata.json` does not list. The rules lens
+major `metadata.json` does not list, and a line saying which GNOME Scroll Zoom needs that
+leaves out one it lists. The rules lens
 checks that a change to `shell-version` says in its description which GNOME Shell its
 `make test-shell` passed on.
 
