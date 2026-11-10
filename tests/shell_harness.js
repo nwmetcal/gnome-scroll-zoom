@@ -179,6 +179,7 @@
             const gio = imports.gi.Gio;
             const magnifier = new gio.Settings({schema_id: 'org.gnome.desktop.a11y.magnifier'});
             magnifier.set_string('mouse-tracking', 'centered');
+            magnifier.reset('screen-position');
             magnifier.reset('focus-tracking');
             magnifier.reset('caret-tracking');
             new gio.Settings({schema_id: 'org.gnome.desktop.a11y.applications'})

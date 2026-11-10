@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from tests.requirements.conftest import Scene
+from tests.requirements.conftest import QUICK_GAP_MS, Scene
 from tests.shell import SCREEN, Json, Shell, number, step
 
 scenarios("SZ-010-zooming-keeps-the-pointer-where-it-is-when-gnome-s-following-pushes.feature")
@@ -18,6 +18,12 @@ GNOME_FOLLOWING = {
     "moves the view with its contents": "proportional",
     "follows nothing": "none",
 }
+# GNOME's zoomed view on half the screen, as its Screen Area setting names it, and where it
+# lies: x, y, width, height.
+VIEW_PORTS = {
+    "top half": ("top-half", (0.0, 0.0, float(SCREEN[0]), SCREEN[1] / 2)),
+    "left half": ("left-half", (0.0, 0.0, SCREEN[0] / 2, float(SCREEN[1]))),
+}
 # The pointer's image in the test shell, across and down, at 1x. GNOME's push keeps the whole
 # of it, grown by the zoom, in the view.
 POINTER_IMAGE_PX = 24
@@ -27,6 +33,7 @@ POINTER_STEP_PX = 10
 POINTER_STEP_MS = 7
 
 Point = tuple[float, float]
+Box = tuple[float, float, float, float]
 
 
 @dataclass
@@ -39,6 +46,7 @@ class Drawn:
     pointer: Point = (0.0, 0.0)
     view_before: Point = (0.0, 0.0)
     middle_before: Point = (0.0, 0.0)
+    view_port: Box = (0.0, 0.0, float(SCREEN[0]), float(SCREEN[1]))
 
 
 @pytest.fixture
@@ -51,26 +59,28 @@ def point(value: Json) -> Point:
     return number(value[0]), number(value[1])
 
 
-def drawn_at(roi: Json, zoom: Json, pointer: Json, on: Json) -> Point:
-    """Where the zoomed view draws the point the pointer is on: its place in the view times
-    the zoom, or the pointer itself with zoom off."""
+def drawn_at(roi: Json, zoom: Json, pointer: Json, on: Json, view_port: Box) -> Point:
+    """Where the zoomed view draws the point the pointer is on: from the view's own corner,
+    its place in the view times the zoom, or the pointer itself with zoom off."""
     x, y = point(pointer)
     if on is not True:
         return x, y
     left, top = point(roi)
     factor = number(zoom)
-    return (x - left) * factor, (y - top) * factor
+    return view_port[0] + (x - left) * factor, view_port[1] + (y - top) * factor
 
 
-def kept_at(before: Point, pointer: Point, zoom: float) -> Point:
+def kept_at(before: Point, pointer: Point, zoom: float, view_port: Box) -> Point:
     """Where a pointer kept where it is is drawn at this zoom: where it was drawn, as near as
-    keeps its whole image on the screen and the view within the screen."""
+    keeps its whole image in the view, and the part of the screen the view shows within the
+    screen."""
     kept: list[float] = []
     for axis in (0, 1):
-        size = SCREEN[axis]
-        place = min(max(before[axis], 0.0), size - POINTER_IMAGE_PX * zoom)
-        start = min(max(pointer[axis] - place / zoom, 0.0), size - size / zoom)
-        kept.append((pointer[axis] - start) * zoom)
+        origin, size = view_port[axis], view_port[axis + 2]
+        place = min(max(before[axis], origin), origin + size - POINTER_IMAGE_PX * zoom)
+        start = pointer[axis] - (place - origin) / zoom
+        start = min(max(start, 0.0), SCREEN[axis] - size / zoom)
+        kept.append(origin + (pointer[axis] - start) * zoom)
     return kept[0], kept[1]
 
 
@@ -97,9 +107,9 @@ def state(shell: Shell) -> dict[str, Json]:
     return value
 
 
-def drawn_now(shell: Shell) -> Point:
+def drawn_now(shell: Shell, view_port: Box) -> Point:
     now = state(shell)
-    return drawn_at(now["roi"], now["zoom"], now["pointer"], now["on"])
+    return drawn_at(now["roi"], now["zoom"], now["pointer"], now["on"], view_port)
 
 
 def record(shell: Shell) -> None:
@@ -117,11 +127,35 @@ def gnome_follows(shell: Shell, how: str) -> None:
     shell.call(f"{MAGNIFIER}.set_string('mouse-tracking', '{GNOME_FOLLOWING[how]}'); return true;")
 
 
+@given(parsers.parse("zoom was last on at {zoom:g}x around {x:d}, {y:d} and is off"))
+def last_on_around(shell: Shell, zoom: float, x: int, y: int) -> None:
+    # A view a person saw: GNOME's centred following puts its middle on the pointer, and
+    # GNOME keeps that middle once zoom goes off.
+    shell.call(f"{MAGNIFIER}.set_string('mouse-tracking', 'centered'); return true;")
+    shell.run_steps([step(1, "moveTo", x, y)])
+    shell.wait_until(f"scrollZoomTest.state().pointer.join() === '{x},{y}'")
+    shell.call(f"return scrollZoomTest.zoomTo({zoom});")
+    shell.wait_until("scrollZoomTest.state().on")
+    shell.settle()
+    shell.call(
+        "new imports.gi.Gio.Settings({schema_id: 'org.gnome.desktop.a11y.applications'})"
+        ".set_boolean('screen-magnifier-enabled', false); return true;"
+    )
+    shell.wait_until("!scrollZoomTest.state().on")
+
+
+@given(parsers.parse("GNOME's zoomed view is on the {half} of the screen"))
+def view_on_half(shell: Shell, drawn: Drawn, half: str) -> None:
+    area, view_port = VIEW_PORTS[half]
+    shell.call(f"{MAGNIFIER}.set_string('screen-position', '{area}'); return true;")
+    drawn.view_port = view_port
+
+
 @given(parsers.parse("the pointer is at {x:d}, {y:d}"))
 def pointer_at(shell: Shell, drawn: Drawn, x: int, y: int) -> None:
     shell.run_steps([step(1, "moveTo", x, y)])
     shell.wait_until(f"scrollZoomTest.state().pointer.join() === '{x},{y}'")
-    drawn.before = drawn_now(shell)
+    drawn.before = drawn_now(shell, drawn.view_port)
     drawn.pointer = (float(x), float(y))
     roi = state(shell)["roi"]
     assert isinstance(roi, list)
@@ -142,8 +176,25 @@ def pointer_left(shell: Shell, scene: Scene, drawn: Drawn, pixels: int) -> None:
     shell.run_steps(steps)
     time.sleep(0.2)
     recorded(shell, scene)
-    drawn.before = drawn_now(shell)
+    drawn.before = drawn_now(shell, drawn.view_port)
     drawn.pointer = point(state(shell)["pointer"])
+
+
+@when(
+    parsers.parse(
+        "Super is held and the wheel turns {up:d} notches up and then {down:d} down in one spin"
+    )
+)
+def spin_and_back(shell: Shell, scene: Scene, up: int, down: int) -> None:
+    record(shell)
+    steps: list[list[Json]] = [step(20, "press", "super")]
+    steps += [step(QUICK_GAP_MS, "notch", 1) for _ in range(up)]
+    steps += [step(QUICK_GAP_MS, "notch", -1) for _ in range(down)]
+    steps += [step(20, "release", "super")]
+    shell.run_steps(steps, timeout_s=30)
+    time.sleep(0.2)
+    shell.settle()
+    recorded(shell, scene)
 
 
 @when(parsers.parse("Super is held and two fingers swipe {pixels:d} pixels {direction}"))
@@ -216,9 +267,9 @@ def pointer_kept(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> No
         assert point(frame["pointer"]) == drawn.pointer, (
             f"the pointer itself moved, to {frame['pointer']}, from {drawn.pointer}"
         )
-        x, y = drawn_at(frame["roi"], frame["zoom"], frame["pointer"], frame["on"])
+        x, y = drawn_at(frame["roi"], frame["zoom"], frame["pointer"], frame["on"], drawn.view_port)
         if frame["on"] is True:
-            kx, ky = kept_at(drawn.before, drawn.pointer, number(frame["zoom"]))
+            kx, ky = kept_at(drawn.before, drawn.pointer, number(frame["zoom"]), drawn.view_port)
         else:
             kx, ky = drawn.pointer
         worst = max(worst, abs(x - kx), abs(y - ky))
@@ -228,7 +279,7 @@ def pointer_kept(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> No
         f"{by:.0f}, over {len(scene.frames)} frames and where it rests at the end"
     )
     # The next zoom in the scenario starts from here.
-    drawn.before = drawn_now(shell)
+    drawn.before = drawn_now(shell, drawn.view_port)
 
 
 @then(
