@@ -10,6 +10,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from tests.paths import BUILD, EXTENSION, ROOT
 
@@ -45,13 +46,14 @@ def gnome_shell_refusal() -> str | None:
     """Why the test shell will not run on this machine's GNOME Shell, or None when it will:
     only on a major metadata.json lists (decision 0008)."""
     try:
-        version = subprocess.run(
-            ["gnome-shell", "--version"], capture_output=True, text=True, check=True
-        ).stdout.split()[-1]
-    except (OSError, subprocess.CalledProcessError):
+        done = subprocess.run(["gnome-shell", "--version"], capture_output=True, text=True)
+    except FileNotFoundError:
         return "the @shell scenarios need GNOME Shell, and this machine has no GNOME Shell"
-    metadata: dict[str, list[str]] = json.loads((EXTENSION / "metadata.json").read_text())
-    listed = metadata["shell-version"]
+    if done.returncode != 0:
+        return f"gnome-shell --version exited {done.returncode}: {done.stderr.strip()}"
+    version = done.stdout.split()[-1]
+    metadata: dict[str, object] = json.loads((EXTENSION / "metadata.json").read_text())
+    listed = [str(major) for major in cast("list[object]", metadata["shell-version"])]
     if version.split(".")[0] in listed:
         return None
     return (
