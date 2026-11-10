@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """SZ-009: zoom follows keyboard focus and the text cursor only when asked."""
 
+import json
 import time
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -16,6 +17,9 @@ scenarios("SZ-009-zoom-follows-keyboard-focus-and-the-text-cursor-only-when-aske
 
 APP = ROOT / "tests" / "focus_app.js"
 TITLE = "Focus test app"
+# Another app to take focus: SZ-008's full-screen app, which has nothing that takes focus.
+OTHER_APP = ROOT / "tests" / "full_screen_app.js"
+OTHER_TITLE = "Full-screen test app"
 UUID = "scroll-zoom@nhicc"
 # What tests/focus_app.js draws, on the unzoomed screen, as boxes: x, y, width, height. The
 # middle button's middle is a point; the line's text is its two characters' cells, as GNOME's
@@ -189,6 +193,11 @@ def app_printing(shell: Shell) -> None:
     open_app(shell, "--print")
 
 
+@given("the focus test app is open with a text area bigger than the view")
+def app_big(shell: Shell) -> None:
+    open_app(shell, "--big")
+
+
 @given(parsers.parse("zoom is on at {zoom:g}x with the pointer at {x:d}, {y:d}"))
 def zoom_on_at_pointer(
     shell: Shell, scene: Scene, watch: Watch, zoom: float, x: int, y: int
@@ -201,6 +210,7 @@ def zoom_on_at_pointer(
     watch.start = pointer_view(zoom, (float(x), float(y)))
 
 
+@when("Tab moves keyboard focus into the text area")
 @when("Tab moves keyboard focus to the middle button")
 def tab(shell: Shell, watch: Watch) -> None:
     shell.run_steps([step(1, "press", "tab"), step(20, "release", "tab")])
@@ -293,6 +303,39 @@ def tab_then_off(shell: Shell, scene: Scene, watch: Watch, duration_ms: int) -> 
     steps = wiggle_with(scene.pointer, duration_ms, {200: TAB, 600: off})
     shell.run_steps(steps, timeout_s=duration_ms / 1000 + 5)
     shell.wait_until("scrollZoomTest.state().extension !== 1")
+    watch.since = time.monotonic()
+
+
+@when(
+    parsers.parse(
+        "Tab moves focus, and the app's window closes, during a {duration_ms:d} ms pointer move"
+    )
+)
+def tab_then_close(shell: Shell, scene: Scene, watch: Watch, duration_ms: int) -> None:
+    close = [step(1, "closeWindows")]
+    steps = wiggle_with(scene.pointer, duration_ms, {200: TAB, 600: close})
+    shell.run_steps(steps, timeout_s=duration_ms / 1000 + 5)
+    watch.since = time.monotonic()
+
+
+@when(
+    parsers.parse(
+        "following the text cursor comes on in a {duration_ms:d} ms pointer move, "
+        "and another app takes focus"
+    )
+)
+def other_app_takes_focus(shell: Shell, scene: Scene, watch: Watch, duration_ms: int) -> None:
+    on = [step(1, "setBoolean", switch(shell, "the text cursor"), True)]
+    steps = wiggle_with(scene.pointer, duration_ms, {100: on})
+    shell.call(f"return scrollZoomTest.run({json.dumps(steps)});")
+    shell.client("gjs", "-m", str(OTHER_APP))
+    shell.wait_until(
+        f"global.display.focus_window?.get_title() === '{OTHER_TITLE}'",
+        timeout_s=duration_ms / 1000,
+    )
+    # The follow must still be held when focus moves, or this checks nothing.
+    assert shell.call("return scrollZoomTest.busy;"), "the other app took focus after the move"
+    shell.wait_until("!scrollZoomTest.busy", timeout_s=duration_ms / 1000 + 5)
     watch.since = time.monotonic()
 
 
