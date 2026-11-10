@@ -660,6 +660,9 @@ def forms(receiver: str, name: str) -> list[str]:
         f"{receiver}.{name}.apply({receiver}, args);",
         f"{receiver}?.{name}(a, b);",
         f"{receiver}.{escaped}(a, b);",
+        # A name taken off its object by a quoted key, and by a computed one.
+        f"const {{'{name}': h}} = {receiver};\nh(a, b);",
+        f"const {{['{name}']: h}} = {receiver};\nh(a, b);",
         # A division after n++ or n-- is not a regex, and hides nothing after it.
         f"const h = n++ / 2; {receiver}.{name}(a, b);",
         f"const h = n-- / 2; {receiver}.{name}(a, b);",

@@ -8,7 +8,8 @@
 // SOURCES.json holds a list of JavaScript sources. This prints a list with one entry for
 // each, or the parser's error:
 //   calls: every call, as [line, name, receiver, form, kept, args, use]. form is dot for
-//     receiver.name(...), bare for name(...), and optional or computed otherwise. kept is
+//     receiver.name(...), bare for name(...), optional or computed for those, and other for
+//     a callee that is none of them, such as (0, f)(x). kept is
 //     what the call's result is assigned to, if anything. use says how a
 //     global.compositor.get_laters() call is used: hold, add, remove, or null.
 //   names: every place a name stands, a string that holds one alone included, as
