@@ -17,11 +17,20 @@ scenarios("SZ-009-zoom-follows-keyboard-focus-and-the-text-cursor-only-when-aske
 APP = ROOT / "tests" / "focus_app.js"
 TITLE = "Focus test app"
 UUID = "scroll-zoom@nhicc"
-# The middles of what tests/focus_app.js draws, on the unzoomed screen.
-MIDDLES = {"middle button": (760.0, 400.0), "line": (760.0, 572.0)}
+# What tests/focus_app.js draws, on the unzoomed screen, as boxes: x, y, width, height. The
+# middle button's middle is a point; the line's text is its two characters' cells, as GNOME's
+# accessibility places them in the test shell's monospace font, where the text cursor sits.
+TARGETS = {
+    "middle button's middle": (760.0, 400.0, 0.0, 0.0),
+    "line's text whole": (740.0, 560.0, 16.0, 16.0),
+}
 SWITCHES = {"keyboard focus": "follow-focus", "the text cursor": "follow-text-cursor"}
 MAGNIFIER = "new imports.gi.Gio.Settings({schema_id: 'org.gnome.desktop.a11y.magnifier'})"
 FOLLOWING_KEYS = ("focus-tracking", "caret-tracking")
+GNOME_FOLLOWING = {
+    "centre the view on keyboard focus and on the text cursor": "centered",
+    "push the view to keyboard focus and to the text cursor": "push",
+}
 # Long enough for a new GTK window to give its widget focus and show it to GNOME's
 # accessibility, so the scenario's own Tab is the first focus change zoom sees.
 APP_READY_S = 1.0
@@ -29,9 +38,11 @@ APP_READY_S = 1.0
 
 @dataclass
 class Watch:
-    """When the view started being watched: the scenario's last action."""
+    """When the view started being watched, the scenario's last action, and where the pointer
+    put the view when zoom came on."""
 
     since: float = 0.0
+    start: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
 
 @pytest.fixture
@@ -60,19 +71,23 @@ def view(shell: Shell) -> tuple[float, float, float, float]:
     return x, y, width, height
 
 
+def pointer_view(zoom: float, pointer: tuple[float, float]) -> tuple[float, float, float, float]:
+    """Where the test shell's centred pointer following puts the view, as far as the screen's
+    edges allow: x, y, width, height on the unzoomed screen."""
+    sizes = (SCREEN[0] / zoom, SCREEN[1] / zoom)
+    x, y = (
+        min(max(pointer[axis] - sizes[axis] / 2, 0.0), SCREEN[axis] - sizes[axis])
+        for axis in (0, 1)
+    )
+    return x, y, sizes[0], sizes[1]
+
+
 def pointer_view_offset(roi: Json, zoom: Json, pointer: Json) -> float:
-    """How far a view's middle is from where the test shell's centred pointer following puts
-    it, as far as the screen's edges allow, in pixels of the unzoomed screen."""
+    """How far a view is from where the pointer puts it, in pixels of the unzoomed screen."""
     assert isinstance(roi, list) and isinstance(pointer, list)
-    x, y, width, height = (number(value) for value in roi)
-    factor = number(zoom)
-    worst = 0.0
-    for axis, (start, size) in enumerate(((x, width), (y, height))):
-        screen = SCREEN[axis]
-        half = screen / factor / 2
-        expected = min(max(number(pointer[axis]), half), screen - half)
-        worst = max(worst, abs(start + size / 2 - expected))
-    return worst
+    x, y, _, _ = (number(value) for value in roi)
+    expected = pointer_view(number(zoom), (number(pointer[0]), number(pointer[1])))
+    return max(abs(x - expected[0]), abs(y - expected[1]))
 
 
 def set_gnome_following(shell: Shell, value: str) -> None:
@@ -123,6 +138,7 @@ def zoom_on_at_pointer(
     shell.call("return scrollZoomTest.record();")
     zoom_to(shell, scene, zoom, (float(x), float(y)))
     watch.since = time.monotonic()
+    watch.start = pointer_view(zoom, (float(x), float(y)))
 
 
 @when("Tab moves keyboard focus to the middle button")
@@ -131,9 +147,9 @@ def tab(shell: Shell, watch: Watch) -> None:
     watch.since = time.monotonic()
 
 
-@when("GNOME's own settings change to centre the view on keyboard focus and on the text cursor")
-def gnome_changes(shell: Shell, watch: Watch) -> None:
-    set_gnome_following(shell, "centered")
+@when(parsers.parse("GNOME's own settings change to {how}"))
+def gnome_changes(shell: Shell, watch: Watch, how: str) -> None:
+    set_gnome_following(shell, GNOME_FOLLOWING[how])
     watch.since = time.monotonic()
 
 
@@ -176,33 +192,42 @@ def stays_with_pointer(shell: Shell, watch: Watch, seconds: int, tolerance: int)
     )
 
 
-@then("GNOME's own settings still centre the view on keyboard focus and on the text cursor")
-def gnome_unchanged(shell: Shell) -> None:
+@then(parsers.parse("GNOME's own settings still {how}"))
+def gnome_unchanged(shell: Shell, how: str) -> None:
     gets = ", ".join(f"m.get_string('{key}')" for key in FOLLOWING_KEYS)
     values = shell.call(f"const m = {MAGNIFIER}; return [{gets}];")
-    assert values == ["centered", "centered"], f"GNOME's own settings became {values}"
+    wanted = [GNOME_FOLLOWING[how]] * len(FOLLOWING_KEYS)
+    assert values == wanted, f"GNOME's own settings became {values}, not {wanted}"
 
 
 @then(
     parsers.parse(
-        "after {seconds:d} s the view shows the {target}'s middle, within {margin:d} pixels "
-        "of its edge"
+        "after {seconds:d} s the view shows the {target}, overshooting by at most {margin:d} pixels"
     )
 )
 def brought_into_view(shell: Shell, watch: Watch, seconds: int, target: str, margin: int) -> None:
     wait_out(watch, seconds)
-    x, y, width, height = view(shell)
-    tx, ty = MIDDLES[target]
-    inside = x <= tx <= x + width and y <= ty <= y + height
-    edge = min(tx - x, x + width - tx, ty - y, y + height - ty)
-    assert inside, f"the {target}'s middle is out of the view, which shows {x:.0f}, {y:.0f}"
-    assert edge <= margin, f"the {target}'s middle is {edge:.0f} pixels from the view's edge"
+    end = view(shell)
+    box = TARGETS[target]
+    for axis, name in ((0, "across"), (1, "down")):
+        low, high = box[axis], box[axis] + box[axis + 2]
+        start, size = watch.start[axis], watch.start[axis + 2]
+        assert end[axis] <= low and high <= end[axis] + size, (
+            f"the {target} is out of the view {name}: it covers {low:.0f} to {high:.0f}, "
+            f"the view {end[axis]:.1f} to {end[axis] + size:.1f}"
+        )
+        # How far the view had to move to show the target, from where the pointer put it.
+        needed = max(high - (start + size), start - low, 0.0)
+        overshoot = abs(end[axis] - start) - needed
+        assert overshoot <= margin, (
+            f"the view moved {abs(end[axis] - start):.1f} pixels {name} where "
+            f"{needed:.1f} show the {target}: an overshoot of {overshoot:.1f}"
+        )
 
 
 @then(
     parsers.parse(
-        "after {seconds:d} s the view is centred on the {target}'s middle, "
-        "within {tolerance:d} pixels"
+        "after {seconds:d} s the view is centred on the {target}, within {tolerance:d} pixels"
     )
 )
 def centred_on_target(
@@ -210,6 +235,7 @@ def centred_on_target(
 ) -> None:
     wait_out(watch, seconds)
     x, y, width, height = view(shell)
-    tx, ty = MIDDLES[target]
-    off = max(abs(x + width / 2 - tx), abs(y + height / 2 - ty))
-    assert off <= tolerance, f"the view's middle is {off:.1f} pixels from the {target}'s middle"
+    left, top, box_width, box_height = TARGETS[target]
+    middle = (left + box_width / 2, top + box_height / 2)
+    off = max(abs(x + width / 2 - middle[0]), abs(y + height / 2 - middle[1]))
+    assert off <= tolerance, f"the view's middle is {off:.1f} pixels from the {target}"
