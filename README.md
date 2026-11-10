@@ -107,7 +107,10 @@ Open them from the **Extensions** app (Scroll Zoom > Settings), or run
   *Soft* (smooth everywhere), or *GNOME standard*.
 
 Everything in **Settings > Accessibility > Zoom** applies too, such as how the view
-follows the pointer, and color effects. GNOME also has settings for following keyboard focus
+follows the pointer, and color effects. For the Mac's "only when the pointer reaches an
+edge", set **Follow Behavior** to **Pushes Contents Around**: the view then stays still while
+the pointer moves within it, and Scroll Zoom keeps the pointer where it is on the screen as
+you zoom. GNOME also has settings for following keyboard focus
 and the text cursor, which its Settings page does not show; while Scroll Zoom is on, its two
 switches take their place, and turning Scroll Zoom off brings GNOME's back.
 

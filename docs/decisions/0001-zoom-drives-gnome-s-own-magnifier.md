@@ -1,7 +1,7 @@
 # Zoom drives GNOME's own magnifier
 
 - Status: accepted
-- Date: 2026-11-10
+- Date: 2026-11-11
 - Decided by: Nicholas Metcalf
 
 ## Context
@@ -22,22 +22,31 @@ Drive GNOME's magnifier, because everything it already does keeps working: Super
 Settings page, color effects, and the lock screen. Its following of keyboard focus and the text
 cursor goes through Scroll Zoom's own switches while Scroll Zoom is on (decision 0007).
 
+How the view follows the pointer stays GNOME's own setting, Follow Behavior, which GNOME's
+Settings page shows. A setting of Scroll Zoom's own for it would override that page without a
+word, which the switches for focus and the text cursor can do only because the page shows
+neither. Scroll Zoom adds one thing to GNOME's following: under push, zooming keeps the pointer
+where it is on the screen, where GNOME's own push zooms around the view's middle and pushes
+the pointer toward an edge (SZ-010).
+
 ### Consequences
 
 - Good: zoom on and off and the zoom level are GNOME's settings, so the toggle and the
   Settings slider stay in step with the wheel.
 - Bad: the extension reaches into the magnifier's internals (`_changeROI`, the zoom region's
-  clone, `_updateCloneGeometry`), which can change between GNOME releases. That is why
+  clone, `_updateCloneGeometry`, and the pointer image's size, `_mouseSourceActor`), which can
+  change between GNOME releases. That is why
   `metadata.json` lists only the versions the `@shell` scenarios have passed on.
 
 ### Checked by
 
 SZ-001 and SZ-007 drive GNOME's zoom settings; SZ-006 checks that turning the extension off
-hands the magnifier back unchanged.
+hands the magnifier back unchanged; SZ-010 checks that GNOME's ways of following other than
+push place the view as GNOME does.
 
 ## Reversing it
 
 A zoom of its own would need everything above rewritten: tracking, shortcuts, settings. The
 seam is that the extension touches the magnifier in a few places: `RegionSmoothing` in
-`smoothing.js`, and `_applyLevel`, `_routeMagFactorChanges`, and `_routeFollowing` and the
-handlers it connects (decision 0007) in `extension.js`.
+`smoothing.js`, and `_applyLevel`, `_pushCentre`, `_routeMagFactorChanges`, and
+`_routeFollowing` and the handlers it connects (decision 0007) in `extension.js`.
