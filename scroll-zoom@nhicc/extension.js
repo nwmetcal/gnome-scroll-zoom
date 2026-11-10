@@ -75,6 +75,7 @@ export default class ScrollZoomExtension extends Extension {
         this._saveId = 0;
         this._panLater = 0;
         this._applying = false;
+        this._followPointer = false;
         this._settingActive = false;
         this._smoothing = null;
 
@@ -202,6 +203,7 @@ export default class ScrollZoomExtension extends Extension {
         if (direction < 0 && this._motion.settled && !Main.magnifier.isActive())
             return;
         this._syncMotion();
+        this._followPointer = true;
         apply();
         this._run();
     }
@@ -217,6 +219,7 @@ export default class ScrollZoomExtension extends Extension {
                 return;
             }
             extension._syncMotion();
+            extension._followPointer = false;
             extension._motion.glideTo(Math.log(xMagFactor), now());
             extension._run();
         };
@@ -270,7 +273,11 @@ export default class ScrollZoomExtension extends Extension {
                 region._changeROI({
                     xMagFactor: factor,
                     yMagFactor: factor,
-                    redoCursorTracking: region._followingCursor,
+                    // A glide the wheel or touchpad started stays on the pointer all the
+                    // way. GNOME's own following lasts a second after zoom comes on, so a
+                    // slow spin would otherwise settle where the view was then. Keyboard
+                    // zoom keeps GNOME's way, which hands over to focus tracking.
+                    redoCursorTracking: this._followPointer || region._followingCursor,
                     animate: false,
                 });
             } else {
