@@ -72,8 +72,8 @@ SIGNAL_WORD = re.compile(r"(?<!dis)connect|(?<!un)subscribe|(?<!un)(?:watch|own)
 # or a signal called 'connected', is not.
 SIGNAL_NAME = re.compile(r"(?:\w+_)?(?:connect|subscribe|(?:watch|own)_name)(?:[A-Z_]\w*)?")
 # Names that run code from a string, or load a module while the extension runs: code no
-# reading of the bundle's files sees.
-CODE = {"eval", "Function", "import()"}
+# reading of the bundle's files sees. Every function's constructor is Function.
+CODE = {"eval", "Function", "constructor", "import()"}
 SOURCE_WORD = re.compile(r"\w+_add\w*|\w+_source_new\w*|attach|setTimeout|setInterval")
 # Words that bind a key: a lower-case name, so a type such as Meta.KeyBindingFlags is not one.
 KEY_WORD = re.compile(r"(?!remove|get_)(?=[a-z])\w*(?i:keybinding)\w*|grab\w*(?i:accelerator)\w*")
@@ -406,7 +406,7 @@ def undone(text: str, read: Read) -> list[str]:
     # code is read where it is written, or GNOME Shell's, such as the magnifier's
     # _connectSignals, which undoes itself and is left to review.
     for line, name, site in read.names:
-        if name in CODE and site != "declared":
+        if name in CODE and site not in ("declared", "key"):
             found.append(f"code this check cannot read: {at(line)}")
         kind = family(name, string=site == "string")
         if kind and not name.startswith("_") and site != "declared" and site not in readable:
@@ -593,13 +593,6 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "this._l = laters.add(0, f);\nlaters.remove(this._l);": (
             "a main loop source this check cannot read"
         ),
-        # Code run from a string, or loaded while the extension runs, is not read as code.
-        "eval(\"this._id = global.stage.connect('x', f);\");": "code this check cannot read",
-        "new Function(\"global.stage.connect('x', f);\")();": "code this check cannot read",
-        "const E = 'eval';\nglobalThis[E](\"global.stage.connect('x', f);\");": (
-            "code this check cannot read"
-        ),
-        "import('./probe.js');": "code this check cannot read",
         # allowKeybinding changes the modes a key of GNOME's runs in, until it is set back.
         "Main.wm.allowKeybinding('switch-applications', Shell.ActionMode.ALL);": (
             "a key binding this check cannot read"
@@ -716,6 +709,39 @@ def test_every_form_found_fails_for_every_kind_of_call() -> None:
     ]
     missed = [source for source, found in zip(sources, checked(sources), strict=True) if not found]
     assert not missed, "\n".join(missed)
+
+
+# Ways to run code from a string, or to load a module while the extension runs: the code they
+# run is in no file the check reads. Each fails. Any other way, such as a module gjs's older
+# importer loads through imports.<name>, is left to review.
+STRING_CODE = "\"global.stage.connect('x', f);\""
+RUN_FROM_A_STRING = (
+    f"eval({STRING_CODE});",
+    f"globalThis.eval({STRING_CODE});",
+    f"(0, eval)({STRING_CODE});",
+    f"const E = 'eval';\nglobalThis[E]({STRING_CODE});",
+    f"new Function({STRING_CODE})();",
+    f"Function({STRING_CODE})();",
+    f"(function () {{}}).constructor({STRING_CODE})();",
+    f"(() => {{}}).constructor({STRING_CODE})();",
+    f"const AF = (async () => {{}}).constructor;\nnew AF({STRING_CODE})();",
+    f"Object.getPrototypeOf(function* () {{}}).constructor({STRING_CODE});",
+    f"this.constructor.constructor({STRING_CODE})();",
+    f"[].map.constructor({STRING_CODE})();",
+    f"Reflect.get(() => {{}}, 'constructor')({STRING_CODE})();",
+    f"const {{constructor: make}} = () => {{}};\nmake({STRING_CODE})();",
+    "import('./probe.js');",
+)
+
+
+def test_code_run_from_a_string_fails() -> None:
+    sources: list[str] = list(RUN_FROM_A_STRING)
+    for source, found in zip(sources, checked(sources), strict=True):
+        assert any("code this check cannot read" in each for each in found), (source, found)
+    # A class's own constructor() is where it is written, and is read there.
+    own = "class A extends B {\n    constructor() {\n        super();\n    }\n}"
+    meta = "const here = import.meta.url;"
+    assert checked([own, meta]) == [[], []]
 
 
 # A name called bare rather than on a receiver, and one taken off its object under another.

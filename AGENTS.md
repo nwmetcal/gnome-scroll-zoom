@@ -145,11 +145,11 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | Every `make` target this file names exists, and the code map names every folder | `tests/style/test_agents_md.py` |
 | No words that sell, no tool or model names, no emoji | `tests/style/test_words.py` |
 | No tracked file over 1 MB | `tests/style/test_sizes.py` |
-| The bundle holds only what the extension loads, metadata and a schema the site takes, and each process's own libraries; every signal, main loop source, and keybinding is undone, as gjs's own parser reads the code, and a name that makes one anywhere but in a call the check reads fails it, as does code run from a string or a module loaded while the extension runs | `tests/style/test_bundle.py`, reading through `tests/style/js_nodes.js` |
+| The bundle holds only what the extension loads, metadata and a schema the site takes, and each process's own libraries; every signal, main loop source, and keybinding is undone, as gjs's own parser reads the code, and a name that makes one anywhere but in a call the check reads fails it, as do `eval`, `Function`, a function's `constructor`, and `import()`, which run code from a string or load a module while the extension runs | `tests/style/test_bundle.py`, reading through `tests/style/js_nodes.js` |
 | `shell-version` lists only whole majors released by the date, counted as the site's analyzer counts them, and the test shell runs only on one it lists | `tests/style/test_bundle.py`; `gnome_shell_refusal` in `tests/shell.py` |
 | Each GNOME major a page or tool names, outside the decisions, is one `metadata.json` lists, and each place that names one names every major it lists | `tests/style/test_gnome_versions.py` |
 | A distribution named for a GNOME major changes with it | review: the rules lens |
-| A call through a name built while the extension runs, such as obj[name](...), is undone too | review: the correctness lens |
+| A call through a name built while the extension runs, such as obj[name](...), is undone too, as is code run from a string or loaded as a module any other way, such as through `imports.<name>` | review: the correctness lens |
 | A change to `shell-version` says in its description which GNOME Shell its `make test-shell` passed on | review: the rules lens |
 | An upload to extensions.gnome.org sends what `gnome-extensions upload` sends, and never prints the password or token | `tests/unit/test_ego.py` |
 | A step crops only boxes wholly on its screenshot, so it never judges an empty crop | `crop` in `tests/images.py`, held by `tests/unit/test_images.py` |

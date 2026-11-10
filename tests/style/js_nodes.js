@@ -13,8 +13,9 @@
 //     what the call's result is assigned to, if anything. use says how a
 //     global.compositor.get_laters() call is used: hold, add, remove, or null.
 //   names: every place a name stands, as [line, name, site]: site is the index of the call
-//     it names, declared for the name a const, let, or var declares, string for a string
-//     that holds a name alone, or other. A dynamic import stands as the name import().
+//     it names, declared for the name a const, let, or var declares, key for a class
+//     method's own name, string for a string that holds a name alone, or other. A dynamic
+//     import stands as the name import().
 //   holds: the plain names that hold global.compositor.get_laters() in a statement of their
 //     own, and that no other module can import. A property of this or of any other object
 //     is never one: an object goes where a reading of one file cannot follow it.
@@ -81,11 +82,6 @@ function holdOf(node) {
     return null;
 }
 
-// Older SpiderMonkey calls an export ExportNamedDeclaration, newer ExportDeclaration.
-function isExport(node) {
-    return node.type === 'ExportDeclaration' || node.type === 'ExportNamedDeclaration';
-}
-
 function isMember(node) {
     return node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression';
 }
@@ -102,7 +98,8 @@ function read(ast) {
 
     // First GLib's names, and the names that hold the laters.
     (function scan(node) {
-        if (isExport(node) && node.declaration?.type === 'VariableDeclaration') {
+        if (node.type === 'ExportDeclaration' &&
+            node.declaration?.type === 'VariableDeclaration') {
             for (const declarator of node.declaration.declarations)
                 exported.add(declarator);
         }
@@ -177,12 +174,16 @@ function read(ast) {
             ? path(node) : null;
         if (here !== null && heldNames.has(here))
             held.push([line, here, role(node, parent, key)]);
-        if (node.type === 'CallImport' || node.type === 'ImportExpression')
+        if (node.type === 'CallImport')
             names.push([line, 'import()', 'other']);
         const site = node.called === true ? node.call : 'other';
         if (node.type === 'Identifier') {
-            const declared = parent?.type === 'VariableDeclarator' && key === 'id';
-            names.push([line, node.name, declared ? 'declared' : site]);
+            let where = site;
+            if (parent?.type === 'VariableDeclarator' && key === 'id')
+                where = 'declared';
+            else if (parent?.type === 'ClassMethod' && key === 'name')
+                where = 'key';
+            names.push([line, node.name, where]);
         }
         if (isMember(node) && !node.computed)
             names.push([line, node.property.name, site]);
