@@ -43,12 +43,15 @@ answers `setMagFactor`. With a switch on, GNOME still listens for focus and the 
 Scroll Zoom places the view, from the size and place GNOME's accessibility gives what moved. It
 moves the view only when what moved is not already wholly in view, and gives it what room the
 view can spare, so at high zoom a control that fits shows whole and a text cursor moving within
-the view leaves it still. Like GNOME, it waits until the pointer has rested a second, but it
-holds only what moved last and works out the move when the pointer rests, from the view as it
-is then. What it holds is dropped when a switch changes or Scroll Zoom is turned off, and a
-follow GNOME was holding is dropped when Scroll Zoom comes on. GNOME's settings are never
-written, and turning the extension off hands them back. This changes decision 0001, whose list
-of what keeps working under Scroll Zoom no longer names focus and caret tracking.
+the view leaves it still. A control bigger than the view, such as a terminal or a text area,
+keeps the view within it, so focus going into one the view already lies inside leaves the lines
+being read where they are. Like GNOME, it waits until the pointer has rested a second, but it
+holds only what moved last, and when the pointer rests it looks up where that is, from the view
+as it is then. Nothing lands once another window has focus or the window has closed. What it
+holds is dropped when a switch changes or Scroll Zoom is turned off, and a follow GNOME was
+holding is dropped when Scroll Zoom comes on. GNOME's settings are never written, and turning
+the extension off hands them back. This changes decision 0001, whose list of what keeps working
+under Scroll Zoom no longer names focus and caret tracking.
 
 ### Consequences
 
@@ -70,8 +73,11 @@ SZ-009's scenarios fail if the view follows focus or the text cursor with the sw
 follows the other kind of move, or comes back after GNOME's settings change; if, with a switch
 on, it shows less than the whole of what moved, from any side or at 10x and 25x, moves further
 than that takes, moves while what moved stays in view, or misses focus going back to a control
-it showed before; if a follow held while the pointer moves lands once a switch is off, Scroll
-Zoom has come on or gone off, or the view or the focus no longer needs it; if Scroll Zoom coming
+it showed before, or moves a view already inside a control bigger than it; if a follow held
+while the pointer moves lands once a switch is off, Scroll Zoom has come on or gone off, its
+window has closed or another app has focus, or the view or the focus no longer needs it; if a
+switch that is on does nothing when Scroll Zoom comes on with GNOME's settings saying to follow
+nothing; if Scroll Zoom coming
 on leaves the following GNOME's settings asked for before it; if GNOME's settings are written;
 or if turning Scroll Zoom off does not hand GNOME's following back.
 
