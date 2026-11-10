@@ -5,7 +5,8 @@ Feature: SZ-001 Holding Super and scrolling zooms the screen
   other keys held is left to the app under the pointer. Each time zoom comes on, by the wheel
   or by GNOME's own toggle, the zoomed view centres on the pointer, as far as the edges of
   the screen allow, whether or not the pointer moved since zoom was last on. The pointer in
-  these scenarios is clear of the edges at the zoom they reach. Zooming all the way out turns
+  these scenarios is clear of the edges at the zoom they reach, and "centred" allows 2
+  pixels for the rounding of where the view sits. Zooming all the way out turns
   zoom off, and GNOME's own zoom toggle then brings back the last level zoom rested at.
   Letting go of Super after zooming does not open the Activities overview.
 
@@ -48,7 +49,7 @@ Feature: SZ-001 Holding Super and scrolling zooms the screen
     And Super is held and the wheel turns 8 notches down
     And Super is held and the wheel turns 2 notches up
     Then zoom is on
-    And the zoomed view is centred on the pointer
+    And the zoomed view is centred on the pointer, within 2 pixels
 
   Scenario: GNOME's zoom toggle comes on around the pointer
     Given zoom is off
@@ -57,7 +58,7 @@ Feature: SZ-001 Holding Super and scrolling zooms the screen
     And Super is held and the wheel turns 8 notches down
     And GNOME's zoom toggle turns zoom on
     Then zoom is on
-    And the zoomed view is centred on the pointer
+    And the zoomed view is centred on the pointer, within 2 pixels
 
   Scenario: Zooming all the way out turns zoom off and keeps the last level
     Given zoom is on at 3x

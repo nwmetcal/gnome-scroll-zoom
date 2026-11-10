@@ -35,8 +35,8 @@ def zoom_on(shell: Shell) -> None:
     assert shell.state()["on"] is True
 
 
-@then("the zoomed view is centred on the pointer")
-def centred_on_pointer(shell: Shell) -> None:
+@then(parsers.parse("the zoomed view is centred on the pointer, within {tolerance:d} pixels"))
+def centred_on_pointer(shell: Shell, tolerance: int) -> None:
     # The test shell's tracking is GNOME's "centered": the view's middle is the pointer.
     view = shell.call(
         "const [x, y, w, h] = Main.magnifier.getZoomRegions()[0].getROI();"
@@ -45,7 +45,7 @@ def centred_on_pointer(shell: Shell) -> None:
     pointer = shell.state()["pointer"]
     assert isinstance(view, list) and isinstance(pointer, list)
     off = max(abs(number(view[i]) - number(pointer[i])) for i in range(2))
-    assert off <= 2, f"the view is centred on {view}, the pointer is at {pointer}"
+    assert off <= tolerance, f"the view is centred on {view}, the pointer is at {pointer}"
 
 
 @then("the Activities overview is closed")
