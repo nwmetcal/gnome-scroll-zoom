@@ -65,10 +65,12 @@ def open_app(shell: Shell, kind: str, *args: str) -> None:
 
 
 def wait_for_text(shell: Shell, timeout_s: float = 10.0) -> None:
-    """Wait until the app's text is on screen: an X11 app draws its first frame later."""
+    """Wait until the app's text is on screen: an X11 app draws its first frame later. The
+    app's white paper with dark ink on it, not the desktop's blue or a black first frame."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        if float(crop(luma(shell.screenshot("app-ready")), TEXT).min()) < 0.5:
+        text = crop(luma(shell.screenshot("app-ready")), TEXT)
+        if float(text.min()) < 0.5 and float(np.mean(text > 0.9)) > 0.5:
             time.sleep(REPAINT_S)
             return
         time.sleep(0.2)

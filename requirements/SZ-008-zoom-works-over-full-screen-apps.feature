@@ -10,7 +10,8 @@ Feature: SZ-008 Zoom works over full-screen apps
   further (SZ-002), and eight notches down undo four up whatever the speed of each spin.
   Sharp text has at most two thirds of the in-between pixels GNOME's own scaling leaves, the
   mark SZ-004 sets for text. It also matches the same text drawn by GNOME's scaling, by a
-  correlation of at least 0.8, so a zoomed view that has lost the app, blank or dark, fails.
+  correlation of at least 0.8, so a zoomed view that has lost the app, blank or dark, fails:
+  sharp text drawn over the app scores about 0.92 against GNOME's, and a blank view 0.
   The bar moves 0.1 pixels a millisecond and goes round once every 2.8 s, so two captures
   300 ms or more apart, and under 2.5 s, find a live view's bar at least 40 pixels of the
   zoomed screen from where it was, and a view that has stopped showing what the app draws
