@@ -147,23 +147,35 @@ def keeps_each_pixel(shell: Shell, scene: Scene, part: str, most: float) -> None
     assert error <= most, f"each pixel's ink off by {error:.1f} percent on average"
 
 
+# Which of a serif line's thin bars a step holds to their height: whether they ink at least
+# half of each pixel.
+BARS = {
+    "thin bars at least half inked": True,
+    "thin bars' faint ends, under half inked": False,
+}
+
+
 @then(
-    parsers.parse(
-        "its thin bars are drawn as tall as the font draws them, within {most:g} pixel on average"
+    parsers.re(
+        r"its (?P<bars>.+?),? are drawn as tall as the font draws them,"
+        r" within (?P<most>[\d.]+) pixel on average"
     )
 )
-def bars_thin(shell: Shell, scene: Scene, most: float) -> None:
+def bars_thin(shell: Shell, scene: Scene, bars: str, most: str) -> None:
     source = pattern_box(shell, "serif")
     unzoomed = crop(scene.image("unzoomed"), source)
     zoomed = crop(scene.image("text"), scene.on_screen(source))
     paper, darkest = float(unzoomed.max()), float(unzoomed.min())
-    heights = bar_heights(
-        (paper - unzoomed) / (paper - darkest),
-        (paper - zoomed) / (paper - darkest),
-        round(scene.zoom),
-    )
-    assert heights, "no thin bars to measure"
+    zoom = round(scene.zoom)
+    heights = [
+        (shown, meant)
+        for shown, meant in bar_heights(
+            (paper - unzoomed) / (paper - darkest), (paper - zoomed) / (paper - darkest), zoom
+        )
+        if (meant / zoom >= 0.5) == BARS[bars]
+    ]
+    assert heights, f"no {bars} to measure"
     error = sum(abs(shown - meant) for shown, meant in heights) / len(heights)
-    assert error <= most, (
-        f"{len(heights)} bars drawn {error:.1f} pixels off their height on average"
+    assert error <= float(most), (
+        f"{len(heights)} {bars} drawn {error:.1f} pixels off their height on average"
     )

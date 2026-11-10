@@ -21,11 +21,13 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
   as hard pixels the serif line keeps 72 percent of the in-between pixels GNOME's scaling
   leaves, where a crisp drawing keeps about 12, so a third tells them apart. A serif font's
   thin bars, the rows it draws partly inked with nothing above or below, are as tall zoomed
-  as their ink: a row 0.6 inked is 3.6 pixels of full ink at 6x. A crisp drawing's bars come
-  within about 0.4 pixels of that on average; bars drawn heavy, as hard pixels, or with
-  GNOME's blur come 1.2 to 1.7 pixels off. Each pixel's ink kept, few in-between pixels,
-  and thin bars as tall as their ink put each edge where the font put it, so a thin stroke
-  cannot come out wide and pale.
+  as their ink: a row 0.6 inked is 3.6 pixels of full ink at 6x. The faint ends of the
+  serifs and bars, under half inked, are held apart from the rest, so a drawing that keeps
+  the rest crisp cannot spend their room on drawing the ends pale. A crisp drawing comes
+  within about 0.4 pixels of their ink on average in both; bars drawn heavy, as hard pixels,
+  or with GNOME's blur come 1.3 to 2.1 pixels off in one or both, and bicubic's faint ends
+  1.5. Each pixel's ink kept, few in-between pixels, and thin bars as tall as their ink put
+  each edge where the font put it, so a thin stroke cannot come out wide and pale.
 
   Scenario: Text has half the blur of GNOME's own zoom
     Given zoom is on at 4x over the test pattern
@@ -68,4 +70,5 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
     When the zoomed screen is captured with sharp smoothing and with GNOME's standard scaling
     Then shrunk back to its unzoomed size, the serif line keeps each pixel's ink within 5 percent on average
     And the serif line has at most a third as many in-between pixels as with GNOME's scaling
-    And its thin bars are drawn as tall as the font draws them, within 1 pixel on average
+    And its thin bars at least half inked are drawn as tall as the font draws them, within 1 pixel on average
+    And its thin bars' faint ends, under half inked, are drawn as tall as the font draws them, within 1 pixel on average
