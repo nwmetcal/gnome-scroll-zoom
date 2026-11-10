@@ -10,7 +10,7 @@
 #   dev/test-shell.sh start [WxH]     start (or restart) the test shell
 #   dev/test-shell.sh eval 'js code'  run JavaScript inside it, print the result
 #   dev/test-shell.sh shot out.png    screenshot the whole test screen
-#   dev/test-shell.sh client cmd...   run a Wayland app inside it
+#   dev/test-shell.sh client cmd...   run an app inside it: Wayland, or X11 through Xwayland
 #   dev/test-shell.sh log             show the shell's log
 #   dev/test-shell.sh stop
 set -euo pipefail

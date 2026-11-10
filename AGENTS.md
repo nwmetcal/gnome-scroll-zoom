@@ -34,7 +34,8 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
   zoomed view. `prefs.js` is the settings window; `schemas/` its settings.
 - `requirements/` holds the features. `tests/` holds their steps, in `tests/requirements/`,
   and the rest of the tests, in `tests/unit/` and `tests/style/`; `tests/shell.py` and
-  `tests/shell_harness.js` drive the test shell.
+  `tests/shell_harness.js` drive the test shell, and `tests/full_screen_app.js` is the
+  full-screen app SZ-008 zooms over.
 - `dev/` holds the private test shell, the test window, and the capture tools for comparing
   smoothing by eye.
 - `tools/` holds the repository's own tools: the commit rules, the intent check, and the
