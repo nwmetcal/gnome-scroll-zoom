@@ -470,7 +470,8 @@ export default class ScrollZoomExtension extends Extension {
                     // slow spin would otherwise settle where the view was then. A level that
                     // comes in through setMagFactor, from keyboard zoom, the Settings slider,
                     // or GNOME handing back this extension's own save, keeps GNOME's way,
-                    // which hands over to focus tracking.
+                    // which hands over to focus tracking. Under GNOME's push the centre places
+                    // the view, and GNOME's push must not move it again.
                     redoCursorTracking: !centre && (this._followPointer || region._followingCursor),
                     animate: false,
                 });

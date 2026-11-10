@@ -152,14 +152,14 @@ Open them from the **Extensions** app (Scroll Zoom > Settings), or run
 - **Smooth images**, and the **Smoothing style**: *Sharp text and lines* (the default),
   *Soft* (smooth everywhere), or *GNOME standard*.
 
-Everything in **Settings > Accessibility > Zoom** applies too, such as how the view
-follows the pointer, and color effects. For the Mac's "only when the pointer reaches an
-edge", set **Follow Behavior** to **Pushes Contents Around**: the view then stays still while
-the pointer moves within it, and Scroll Zoom keeps the pointer where it is on the screen as
-you zoom with Super and the wheel or a touchpad, and as zoom comes on. GNOME's own keyboard
-zoom and the Settings slider still zoom GNOME's way. GNOME also has settings for following keyboard focus
-and the text cursor, which its Settings page does not show; while Scroll Zoom is on, its two
-switches take their place, and turning Scroll Zoom off brings GNOME's back.
+Everything in **Settings > Accessibility > Zoom** applies too, such as how the view follows the
+pointer, and color effects. For the Mac's "only when the pointer reaches an edge", set **Follow
+Behavior** to **Pushes Contents Around**: the view then stays still while the pointer moves
+within it, and Scroll Zoom keeps the pointer where it is on the screen as you zoom with Super
+and the wheel or a touchpad, and as zoom comes on. GNOME's own keyboard zoom and the Settings
+slider still move the pointer as GNOME's push does. GNOME also has settings for following
+keyboard focus and the text cursor, which its Settings page does not show; while Scroll Zoom is
+on, its two switches take their place, and turning Scroll Zoom off brings GNOME's back.
 
 ## Questions and problems
 
