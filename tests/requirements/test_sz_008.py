@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from tests.images import Box, crop, in_between_fraction, luma, zoomed
+from tests.images import Box, crop, in_between_fraction, luma, viewed
 from tests.paths import ROOT
 from tests.requirements.conftest import REPAINT_S, Scene, capture, set_style, zoom_to
 from tests.shell import SCREEN, Shell, number, step
@@ -75,6 +75,14 @@ def wait_for_text(shell: Shell, timeout_s: float = 10.0) -> None:
     raise AssertionError("the app's text never appeared on screen")
 
 
+def view(shell: Shell) -> Box:
+    """The part of the screen GNOME's zoomed view shows. These steps measure from it, not from
+    the pointer, so where the view centres (SZ-001) does not decide them."""
+    roi = shell.call("return Main.magnifier.getZoomRegions()[0].getROI();")
+    assert isinstance(roi, list)
+    return Box(number(roi[0]), number(roi[1]), number(roi[2]), number(roi[3]))
+
+
 @given(parsers.parse("a full-screen {kind} app"))
 def full_screen_app(shell: Shell, kind: str) -> None:
     open_app(shell, kind)
@@ -85,11 +93,12 @@ def full_screen_app(shell: Shell, kind: str) -> None:
 )
 def app_with_shortcuts(shell: Shell) -> None:
     open_app(shell, "Wayland", "--take-shortcuts")
-    # GNOME asks the person; Enter chooses Allow, the dialog's default.
-    time.sleep(1.0)
+    # GNOME asks the person in a dialog; Enter chooses Allow, its default.
+    shell.wait_until("Main.modalCount > 0", timeout_s=10)
     shell.run_steps([step(20, "press", "return"), step(20, "release", "return")])
-    time.sleep(0.5)
-    # Taken over, Super alone no longer opens the Activities overview.
+    shell.wait_until("Main.modalCount === 0")
+    # Taken over, Super alone no longer opens the Activities overview, which it does over an
+    # app that has not taken it.
     shell.run_steps([step(20, "press", "super"), step(60, "release", "super")])
     time.sleep(0.5)
     assert shell.state()["overview"] is False, "the app did not take over the keyboard's shortcuts"
@@ -104,10 +113,7 @@ def zoom_on_bar(shell: Shell, scene: Scene, zoom: float) -> None:
     "the app's zoomed text has at most two thirds as many in-between pixels as with GNOME's scaling"
 )
 def app_text_sharp(shell: Shell, scene: Scene) -> None:
-    state = shell.state()
-    pointer = state["pointer"]
-    assert isinstance(pointer, list)
-    box = zoomed(TEXT, (number(pointer[0]), number(pointer[1])), number(state["zoom"]), SCREEN)
+    box = viewed(TEXT, view(shell), SCREEN)
     capture(shell, scene, "sharp")
     set_style(shell, "standard")
     capture(shell, scene, "standard")
@@ -124,16 +130,16 @@ def captured_twice(shell: Shell, scene: Scene, gap_ms: int) -> None:
     capture(shell, scene, "second")
 
 
-def bar_x(scene: Scene, name: str) -> float:
+def bar_x(shell: Shell, scene: Scene, name: str) -> float:
     """The middle of the dark bar in a capture's row through it, on screen."""
-    row_y = SCREEN[1] / 2 + (BAR_Y - scene.pointer[1]) * scene.zoom
-    row = luma(scene.captures[name])[int(row_y)]
+    bar_row = viewed(Box(0, BAR_Y, 1, 1), view(shell), SCREEN)
+    row = luma(scene.captures[name])[int(bar_row.y)]
     dark = np.nonzero(row < 0.5)[0]
     assert dark.size, f"no bar in the {name} capture"
     return float(dark.mean())
 
 
 @then(parsers.parse("the moving bar is at least {distance:d} pixels from where it was"))
-def bar_moved(scene: Scene, distance: int) -> None:
-    moved = abs(bar_x(scene, "second") - bar_x(scene, "first"))
+def bar_moved(shell: Shell, scene: Scene, distance: int) -> None:
+    moved = abs(bar_x(shell, scene, "second") - bar_x(shell, scene, "first"))
     assert moved >= distance, f"the bar moved {moved:.0f} pixels"

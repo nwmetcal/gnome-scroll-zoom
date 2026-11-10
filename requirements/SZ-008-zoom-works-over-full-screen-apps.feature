@@ -5,7 +5,11 @@ Feature: SZ-008 Zoom works over full-screen apps
   Xwayland, and some apps take over the keyboard's shortcuts. A person with low vision needs
   to zoom into all of them the same way. The test app fills the screen with text and a bar
   that moves every frame, as a game or a video keeps drawing. Four notches turned quickly
-  zoom past 1.2 to the fourth, 2.07x, since a fast spin zooms further (SZ-002).
+  zoom past 1.2 to the fourth, 2.07x, since a fast spin zooms further (SZ-002). Sharp text
+  has at most two thirds of the in-between pixels GNOME's own scaling leaves, the mark
+  SZ-004 sets for text. The bar moves 0.4 pixels a millisecond, about 360 pixels of the
+  screen in 300 ms at 3x, so a view that has stopped showing what the app draws moves it 0
+  pixels and a live one at least 40.
 
   Scenario Outline: Super and scrolling zoom in and out over a full-screen <kind> app
     Given a full-screen <kind> app

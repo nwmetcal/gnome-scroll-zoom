@@ -40,6 +40,18 @@ def zoomed(source: Box, pointer: tuple[float, float], zoom: float, screen: tuple
     )
 
 
+def viewed(source: Box, view: Box, screen: tuple[int, int]) -> Box:
+    """Where a box of the unzoomed screen lands when the full-screen zoomed view shows the
+    part `view` of it, wherever the view is."""
+    scale_x, scale_y = screen[0] / view.width, screen[1] / view.height
+    return Box(
+        (source.x - view.x) * scale_x,
+        (source.y - view.y) * scale_y,
+        source.width * scale_x,
+        source.height * scale_y,
+    )
+
+
 def inset(box: Box, margin: float) -> Box:
     """A box shrunk by a margin on every side."""
     return Box(box.x + margin, box.y + margin, box.width - 2 * margin, box.height - 2 * margin)

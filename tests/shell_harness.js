@@ -167,6 +167,11 @@
             new gio.Settings({schema_id: 'org.gnome.desktop.a11y.applications'})
                 .set_boolean('screen-magnifier-enabled', false);
             Main.magnifier.setActive(false);
+            // GNOME's magnifier remembers where it last saw the pointer and skips re-centring
+            // when it comes on with the pointer still there; start each scenario as a fresh
+            // session does, so none inherits the last one's pointer.
+            Main.magnifier.xMouse = undefined;
+            Main.magnifier.yMouse = undefined;
             magnifier.set_double('mag-factor', 2.0);
             Main.overview.hide();
             for (const key of Object.keys(KEYS))

@@ -54,6 +54,10 @@ def _row(item: pytest.Item, feature_name: str, scenario_name: str) -> Row:
     if len(kinds) != 1:
         raise pytest.UsageError(f"{feature_name}: tag exactly one of @invariant, @golden")
     shell = item.get_closest_marker(SHELL) is not None
+    callspec = getattr(item, "callspec", None)
+    if callspec is not None:
+        # An outline's examples share its name; the matrix says which one each row is.
+        scenario_name = f"{scenario_name} [{callspec.id}]"
     return Row(match.group(1), scenario_name, kinds[0], shell, item.nodeid)
 
 
