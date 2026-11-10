@@ -31,6 +31,7 @@ FOLLOWING_KEYS = ("focus-tracking", "caret-tracking")
 GNOME_FOLLOWING = {
     "centre the view on keyboard focus and on the text cursor": "centered",
     "push the view to keyboard focus and to the text cursor": "push",
+    "follow keyboard focus and the text cursor in proportion": "proportional",
 }
 # Long enough for a new GTK window to give its widget focus and show it to GNOME's
 # accessibility, so the scenario's own Tab is the first focus change zoom sees.
