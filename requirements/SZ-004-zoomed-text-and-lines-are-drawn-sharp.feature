@@ -23,9 +23,9 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
   thin bars, the rows it draws partly inked with nothing above or below, are as tall zoomed
   as their ink: a row 0.6 inked is 3.6 pixels of full ink at 6x. A crisp drawing's bars come
   within about 0.4 pixels of that on average; bars drawn heavy, as hard pixels, or with
-  GNOME's blur come 1.2 to 1.7 pixels off. Each pixel's ink kept, few in-between pixels, and thin
-  bars as tall as their ink put each edge where the font put it, so a thin stroke cannot
-  come out wide and pale.
+  GNOME's blur come 1.2 to 1.7 pixels off. Each pixel's ink kept, few in-between pixels,
+  and thin bars as tall as their ink put each edge where the font put it, so a thin stroke
+  cannot come out wide and pale.
 
   Scenario: Text has half the blur of GNOME's own zoom
     Given zoom is on at 4x over the test pattern
