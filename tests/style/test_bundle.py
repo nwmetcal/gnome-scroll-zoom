@@ -246,61 +246,68 @@ def test_the_library_check_reads_each_way_to_import() -> None:
 
 def undone(text: str) -> list[str]:
     """What the shell side connects, adds, or binds without keeping what disable() needs to
-    undo it, or without undoing it anywhere in the same file. It reads the file, not which
-    method runs when, so an undo anywhere in the file counts."""
-    flat = re.sub(r"\s+", "", text)
+    undo it, or without undoing it anywhere in the same file, and each place that does so in
+    a form it does not read. It reads the file, not which method runs when, so an undo
+    anywhere in the file counts."""
+    code = code_only(text)
+    flat = re.sub(r"\s+", "", code)
     found: list[str] = []
-    found += _kept_and_undone(
-        text,
-        flat,
-        rf"{DOT}(connect(?:_after)?){OPEN}",
-        "disconnect",
-        "a signal whose id",
-        "is never disconnected from",
-    )
-    found += _kept_and_undone(
-        text,
-        flat,
-        rf"{DOT}(grab_accelerator){OPEN}",
-        "ungrab_accelerator",
-        "a key grab whose action",
-        "never ungrabs",
-    )
-    for m in re.finditer(rf"([\w.()]+?){DOT}connectObject{OPEN}", text):
-        owner = re.sub(r"\s+", "", (arguments(text, m.end() - 1) or [""])[-1])
+    read: set[int] = set()
+    for call, undo, what, never in (
+        (
+            rf"{DOT}(connect(?:_after)?){OPEN}",
+            "disconnect",
+            "a signal whose id",
+            "is never disconnected from",
+        ),
+        (
+            rf"{DOT}(grab_accelerator){OPEN}",
+            "ungrab_accelerator",
+            "a key grab whose action",
+            "never ungrabs",
+        ),
+    ):
+        found += _kept_and_undone(code, flat, read, call, undo, what, never)
+    for m in re.finditer(rf"([\w.()]+?){DOT}(connectObject){OPEN}", code):
+        read.add(m.start(2))
+        owner = re.sub(r"\s+", "", (arguments(code, m.end() - 1) or [""])[-1])
         if f"{m.group(1)}.disconnectObject({owner})" not in flat:
             found.append(f"{m.group(1)} is never disconnected: {line_of(text, m.start())}")
-    for adds, removes in sources(text):
-        for m in re.finditer(rf"(?:(this\.\w+)\s*=\s*)?{adds}", text):
-            member = m.group(1)
+    patterns, also_read = sources(code)
+    read |= also_read
+    for adds, removes in patterns:
+        for m in re.finditer(rf"(?:(?P<member>this\.\w+)\s*=\s*)?{adds}", code):
+            read |= {m.start(group) for group in ("name", "laters") if m.groupdict().get(group)}
+            member = m.group("member")
             if member is None or not any(r.format(member) in flat for r in removes):
                 found.append(f"a main loop source never removed: {line_of(text, m.start())}")
     for adds, removes in KEYBINDINGS.items():
-        read = {
+        named = {
             m.start(2): m
-            for m in re.finditer(rf"([\w.()]+?){DOT}({adds}){OPEN}([^,()]+?)\s*,", text)
+            for m in re.finditer(rf"([\w.()]+?){DOT}({adds}){OPEN}([^,()]+?)\s*,", code)
         }
-        for m in re.finditer(rf"{DOT}({adds}){OPEN}", text):
-            named = read.get(m.start(1))
-            if named is None:
+        for m in re.finditer(rf"{DOT}({adds}){OPEN}", code):
+            binding = named.get(m.start(1))
+            if binding is None:
                 found.append(f"a keybinding this check cannot read: {line_of(text, m.start())}")
-            elif re.sub(r"\s+", "", f"{named[1]}.{removes}({named[3]})") not in flat:
-                found.append(f"the keybinding {named[3]} is never removed")
-    return found + unread(text)
+            elif re.sub(r"\s+", "", f"{binding[1]}.{removes}({binding[3]})") not in flat:
+                found.append(f"the keybinding {binding[3]} is never removed")
+    return found + unread(text, code, read)
 
 
 def _kept_and_undone(
-    text: str, flat: str, call: str, undo: str, what: str, never: str
+    code: str, flat: str, read: set[int], call: str, undo: str, what: str, never: str
 ) -> list[str]:
     """Each call whose id is not kept in a member, or whose kept id is never undone."""
     found: list[str] = []
     kept = {
         m.end(): (m.group(1), m.group(2))
-        for m in re.finditer(rf"(this\.\w+)\s*=\s*([\w.()]+?){call}", text)
+        for m in re.finditer(rf"(this\.\w+)\s*=\s*([\w.()]+?){call}", code)
     }
-    for m in re.finditer(call, text):
+    for m in re.finditer(call, code):
+        read.add(m.start(1))
         if m.end() not in kept:
-            found.append(f"{what} is not kept: {line_of(text, m.start())}")
+            found.append(f"{what} is not kept: {line_of(code, m.start())}")
     for member, receiver in kept.values():
         if f"{receiver}.{undo}({member})" not in flat:
             found.append(f"{receiver} {never} {member}")
@@ -314,24 +321,27 @@ def glib_names(text: str) -> list[str]:
     return sorted({"GLib", *names})
 
 
-def sources(text: str) -> list[tuple[str, tuple[str, ...]]]:
-    """Each way the file adds a main loop source, and the ways to remove one kept in a member."""
+def sources(code: str) -> tuple[list[tuple[str, tuple[str, ...]]], set[int]]:
+    """Each way the file adds a main loop source, with a group for the word that adds it and
+    the ways to remove one kept in a member; and where it reads get_laters() outside an add."""
     found: list[tuple[str, tuple[str, ...]]] = []
     adders = "|".join(GLIB_SOURCES)
-    for glib in glib_names(text):
+    for glib in glib_names(code):
         removes = (f"{glib}.source_remove({{}})", f"{glib}.Source.remove({{}})")
-        found.append((rf"\b{glib}{DOT}(?:{adders})(?:_once)?{OPEN}", removes))
-    laters = ["global.compositor.get_laters()"]
-    laters += re.findall(
-        r"((?:this\.)?\w+)\s*=\s*global\s*\.\s*compositor\s*\.\s*get_laters\s*\(\s*\)", text
-    )
-    removes = tuple(f"{later}.remove({{}})" for later in laters)
-    for later in laters:
-        found.append((rf"(?<![\w.]){re.escape(later)}{DOT}add{OPEN}", removes))
+        found.append((rf"\b{glib}{DOT}(?P<name>(?:{adders})(?:_once)?){OPEN}", removes))
+    laters = rf"\bglobal{DOT}compositor{DOT}(?P<laters>get_laters){OPEN}\)"
+    held = list(re.finditer(rf"((?:this\.)?\w+)\s*=\s*{laters}", code))
+    names = [m.group(1) for m in held]
+    read = {m.start("laters") for m in held}
+    read |= {m.start("laters") for m in re.finditer(rf"{laters}{DOT}remove{OPEN}", code)}
+    removes = tuple(f"{later}.remove({{}})" for later in ["global.compositor.get_laters()", *names])
+    found.append((rf"{laters}{DOT}(?P<name>add){OPEN}", removes))
+    for name in names:
+        found.append((rf"(?<![\w.]){re.escape(name)}{DOT}(?P<name>add){OPEN}", removes))
     found.append(
-        (rf"\b(?:setTimeout|setInterval){OPEN}", ("clearTimeout({})", "clearInterval({})"))
+        (rf"\b(?P<name>setTimeout|setInterval){OPEN}", ("clearTimeout({})", "clearInterval({})"))
     )
-    return found
+    return found, read
 
 
 def arguments(text: str, opening: int) -> list[str]:
@@ -356,26 +366,43 @@ def arguments(text: str, opening: int) -> list[str]:
     return args
 
 
-def unread(text: str) -> list[str]:
-    """Each call that connects, subscribes, adds a source, or binds a key in a form undone()
-    does not read."""
+# Words that connect a signal, subscribe on D-Bus, or watch or own a bus name, but not the
+# words that undo them.
+SIGNAL_WORD = re.compile(r"(?<!dis)connect|(?<!un)subscribe|(?<!un)(?:watch|own)_name", re.I)
+SOURCE_WORD = re.compile(r"\w+_add\w*|\w+_source_new\w*|attach|setTimeout|setInterval")
+
+
+def code_only(text: str) -> str:
+    """The text with each comment blanked, keeping every offset and line where it was."""
+
+    def blank(m: re.Match[str]) -> str:
+        found = m.group(0)
+        return re.sub(r"[^\n]", " ", found) if found.startswith("/") else found
+
+    pattern = r"""'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`|//[^\n]*|/\*.*?\*/"""
+    return re.sub(pattern, blank, text, flags=re.S)
+
+
+def unread(text: str, code: str, read: set[int]) -> list[str]:
+    """Each place that connects, subscribes, adds a source, or binds a key in a form undone()
+    does not read: every such word outside a comment where undone() read none, in a string or
+    before .call included."""
     found: list[str] = []
-    for m in re.finditer(rf"\.\s*([A-Za-z]\w*){OPEN}", text):
-        name, lower = m.group(1), m.group(1).lower()
-        signal = "connect" in lower and not lower.startswith("disconnect")
-        signal |= "subscribe" in lower and not lower.startswith("unsubscribe")
-        signal |= lower in {"bus_watch_name", "bus_own_name"}
-        if signal and name not in SIGNAL_FORMS:
+    # A name that starts with an underscore is one of the extension's own members.
+    for m in re.finditer(r"(?<![\w$])[A-Za-z$][\w$]*", code):
+        word = m.group(0)
+        if m.start() in read:
+            continue
+        if SIGNAL_WORD.search(word):
             found.append(f"a signal this check cannot read: {line_of(text, m.start())}")
+        if SOURCE_WORD.fullmatch(word) or word == "get_laters":
+            found.append(f"a main loop source this check cannot read: {line_of(text, m.start())}")
+    for m in re.finditer(rf"\.\s*([A-Za-z]\w*){OPEN}", code):
+        name, lower = m.group(1), m.group(1).lower()
         bind = "keybinding" in lower and not lower.startswith("remove")
         bind |= lower.startswith("grab") and "accelerator" in lower
         if bind and name not in KEY_FORMS:
             found.append(f"a key binding this check cannot read: {line_of(text, m.start())}")
-    glib = "|".join(glib_names(text))
-    for m in re.finditer(rf"\b(\w+_add\w*|\w+_source_new\w*|attach){OPEN}", text):
-        on_glib = re.search(rf"(?:^|[^\w.])(?:{glib}){DOT}$", text[: m.start()])
-        if m.group(1) not in SOURCE_FORMS or not on_glib:
-            found.append(f"a main loop source this check cannot read: {line_of(text, m.start())}")
     return found
 
 
@@ -437,10 +464,33 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "this._a.connectObject('x', f, this._h);\nthis._a.disconnectObject(this);": (
             "this._a is never disconnected"
         ),
+        "Gio.DBus.watch_name(Gio.BusType.SESSION, 'org.example', 0, null, null);": (
+            "a signal this check cannot read"
+        ),
+        "Gio.DBus.session.own_name('org.example', 0, null, null);": "a signal this check cannot",
+        "global.stage['connect']('notify::x', f);": "a signal this check cannot read",
+        "global.stage.connect.call(global.stage, 'notify::x', f);": "a signal this check cannot",
+        "global.stage.connect.apply(global.stage, args);": "a signal this check cannot read",
+        "GLib.timeout_add.call(null, 0, 1, f);": "a main loop source this check cannot read",
+        "global.stage?.connectObject('notify::width', f, this);": "a signal this check cannot",
+        "this._actors[0].connectObject('x', f, this);": "a signal this check cannot read",
+        "global.compositor.get_laters ().add(0, f);": "a main loop source never removed",
+        "this._l = global . compositor.get_laters().add(0, f);": "a main loop source never",
+        "this._l = global.compositor\n    .get_laters()\n    .add(0, f);": "a main loop source",
+        "const {compositor} = global;\nthis._l = compositor.get_laters().add(0, f);": (
+            "a main loop source this check cannot read"
+        ),
+        "this._l = global.display.get_compositor().get_laters().add(0, f);": (
+            "a main loop source this check cannot read"
+        ),
     }
     for code, problem in left.items():
         assert any(problem in found for found in undone(code)), (code, undone(code))
     clean = """
+        // connects the stage, then subscribes; a comment is not a call
+        Gio.bus_unwatch_name(this._watch);
+        this._spacedLater = global.compositor.get_laters ().add(0, f);
+        global.compositor.get_laters().remove(this._spacedLater);
         import G from 'gi://GLib';
         const laters = global.compositor.get_laters();
         this._spaced = global.stage.connect ('y', f);

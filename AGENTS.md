@@ -143,9 +143,9 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | Every `make` target this file names exists, and the code map names every folder | `tests/style/test_agents_md.py` |
 | No words that sell, no tool or model names, no emoji | `tests/style/test_words.py` |
 | No tracked file over 1 MB | `tests/style/test_sizes.py` |
-| The bundle holds only what the extension loads, metadata and a schema the site takes, and each process's own libraries; every signal, main loop source, and keybinding is undone | `tests/style/test_bundle.py` |
+| The bundle holds only what the extension loads, metadata and a schema the site takes, and each process's own libraries; every signal, main loop source, and keybinding in a form the check reads is undone, and one in a form it cannot read fails it | `tests/style/test_bundle.py` |
 | `shell-version` lists only whole majors released by the date, counted as the site's analyzer counts them, and the test shell runs only on one it lists | `tests/style/test_bundle.py`; `gnome_shell_refusal` in `tests/shell.py` |
-| Each GNOME major a page or tool names, outside the decisions, is one `metadata.json` lists, and each line saying which GNOME Scroll Zoom needs names every major it lists | `tests/style/test_gnome_versions.py` |
+| Each GNOME major a page or tool names, outside the decisions, is one `metadata.json` lists, and each place that names one names every major it lists | `tests/style/test_gnome_versions.py` |
 | A distribution named for a GNOME major changes with it | review: the rules lens |
 | A change to `shell-version` says in its description which GNOME Shell its `make test-shell` passed on | review: the rules lens |
 | An upload to extensions.gnome.org sends what `gnome-extensions upload` sends, and never prints the password or token | `tests/unit/test_ego.py` |
