@@ -53,10 +53,10 @@ GTK_ONLY = {"Gdk", "Gtk", "Adw"}
 DOT = r"\s*\.\s*"
 OPEN = r"\s*\("
 KEYBINDINGS = {"addKeybinding": "removeKeybinding", "add_keybinding": "remove_keybinding"}
-# undone() reads a call in the forms it knows and marks where it read each one. Any other word
-# that connects a signal, adds a main loop source, or binds a key fails the check until it
-# reads that form too: the check promises to fail on what it cannot read, not to read every
-# way JavaScript can spell a call.
+# undone() reads a call as plain code writes it, and marks where it read each one. A word that
+# connects a signal, adds a main loop source, or binds a key anywhere else fails the check, as
+# do the other forms it knows: a string name, .call, .apply, and ?.. A name spelled to hide it
+# from a text check, such as an escape in a string or a joined string, is left to review.
 GLIB_SOURCES = ("timeout_add", "timeout_add_seconds", "idle_add")
 
 
@@ -246,7 +246,7 @@ def undone(text: str) -> list[str]:
     """What the shell side connects, adds, or binds without keeping what disable() needs to
     undo it, or without undoing it anywhere in the same file, and each place that does so in
     a form it does not read. It reads the file, not which method runs when, so an undo
-    anywhere in the file counts."""
+    anywhere in the file's code counts, though not one written in a string."""
     code = code_only(text)
     # An undo is looked for in code: a string that holds a call is text, not an undo.
     flat = re.sub(r"\s+", "", without_calls_in_strings(text, code))
@@ -499,9 +499,10 @@ def code_only(text: str, strings: bool = True) -> str:
 
 def unread(text: str, code: str, read: set[int], held: dict[str, set[int]]) -> list[str]:
     """Each place that connects, subscribes, adds a source, or binds a key in a form undone()
-    does not read: every such word outside a comment where undone() read none, in a string or
-    before .call included; each use of a name holding get_laters() but its assignment and its
-    .add( and .remove( calls; and each escape in a name, which hides the word."""
+    does not read: every such word in code where undone() read none, before .call included,
+    and each string that holds such a name alone, as obj['name'] does; each use of a name
+    holding get_laters() but its assignment and its .add( and .remove( calls; and each escape
+    in a name outside a string, which hides the word."""
     found: list[str] = []
     bare = code_only(text, strings=False)
     words = [(m.start(), m.group(0)) for m in re.finditer(r"(?<![\w$])[A-Za-z$][\w$]*", bare)]
@@ -510,8 +511,9 @@ def unread(text: str, code: str, read: set[int], held: dict[str, set[int]]) -> l
         inner = text[start + 1 : end - (2 if text.endswith("${", 0, end) else 1)]
         if kind in ("string", "template") and re.fullmatch(r"[A-Za-z$][\w$]*", inner):
             words.append((start + 1, inner))
-    # A name that starts with an underscore is a private member, the extension's own or GNOME
-    # Shell's; none that connects, adds a source, or binds a key is named so.
+    # A name that starts with an underscore is a private member: the extension's own, whose
+    # code is read where it is written, or GNOME Shell's, such as the magnifier's
+    # _connectSignals, which undoes itself and is left to review.
     for offset, word in words:
         if offset in read:
             continue
@@ -682,7 +684,7 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
     assert undone(clean) == []
 
 
-# Every way a call has been found to slip by, for every kind of call the check reads: what a
+# The forms of a call found to slip by, tried on every kind of call the check reads, so what a
 # review finds for one kind is tried on all of them.
 FAMILIES = (
     ("", "global.stage", "connect"),
