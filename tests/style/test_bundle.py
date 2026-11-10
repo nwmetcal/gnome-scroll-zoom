@@ -899,3 +899,27 @@ def test_the_parser_counts_columns_from_one_in_characters() -> None:
     # counts from 1, in characters, on either.
     assert parse(["x;"]) == [[["code", 1, 1]]]
     assert parse(["'\U0001d465'; x;"]) == [[["string", 1, 1], ["code", 1, 6]]]
+
+
+# Names spelled to hide a call from a text reading, which gjs's parser reads as the call they
+# make: an escape, a joined string, and a space at a dot. Left undone, each fails.
+SPELLED = (
+    "global.stage['\\x63onnect']('x', f);",
+    "global.stage['\\u{63}onnect']('x', f);",
+    "global.stage['con' + 'nect']('x', f);",
+    "Main.wm['addKey\\x62inding']('k', s, 0, 0, f);",
+    "Main.wm['add' + 'Keybinding']('k', s, 0, 0, f);",
+    "this._id = GLib['timeout\\x5fadd'](0, 1, f);",
+    "GLib['timeout_' + 'add'](0, 1, f);",
+    "this._laters = global.compositor.get_laters();\nthis ._laters['add'](0, () => false);",
+)
+
+
+def test_a_name_spelled_to_hide_a_call_is_read_as_the_call_it_makes() -> None:
+    sources: list[str] = list(SPELLED)
+    missed = [source for source, found in zip(sources, checked(sources), strict=True) if not found]
+    assert not missed, "\n".join(missed)
+    undone_then = (
+        "this._id = global.stage['\\x63onnect']('x', f);\nglobal.stage.disconnect(this._id);"
+    )
+    assert checked([undone_then]) == [[]]
