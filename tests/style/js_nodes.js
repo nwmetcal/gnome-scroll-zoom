@@ -11,8 +11,9 @@
 //     receiver.name(...), bare for name(...), and optional or computed otherwise. kept is
 //     what the call's result is assigned to, if anything. use says how a
 //     global.compositor.get_laters() call is used: hold, add, remove, or null.
-//   names: every place a name stands, as [line, name, site]: site is the index of the call
-//     it names, declared for the name a const, let, or var declares, or other.
+//   names: every place a name stands, a string that holds one alone included, as
+//     [line, name, site]: site is the index of the call it names, declared for the name a
+//     const, let, or var declares, or other.
 //   holds: the names that hold global.compositor.get_laters() in a statement of their own.
 //   held: each place a held name stands, as [line, name, role]: role is hold, assigned,
 //     laters for the receiver of its own .add( or .remove(, or other.
@@ -112,6 +113,7 @@ function read(ast) {
             scan(child);
     })(ast);
     const heldNames = new Set([...holds.values()].map(([name]) => name));
+    const heldOnThis = [...heldNames].some(name => name.startsWith('this.'));
     const holdTargets = new Set([...holds.values()].map(([, , target]) => target));
 
     function call(node, parent, key) {
@@ -167,6 +169,11 @@ function read(ast) {
             ? path(node) : null;
         if (here !== null && heldNames.has(here))
             held.push([line, here, role(node, parent, key)]);
+        // this given another name, or taken apart, reaches a held this._laters by that name.
+        const aliased = (parent?.type === 'VariableDeclarator' && key === 'init') ||
+            (parent?.type === 'AssignmentExpression' && key === 'right');
+        if (node.type === 'ThisExpression' && heldOnThis && aliased)
+            held.push([line, 'this', 'other']);
         const site = node.called === true ? node.call : 'other';
         if (node.type === 'Identifier') {
             const declared = parent?.type === 'VariableDeclarator' && key === 'id';
@@ -174,18 +181,14 @@ function read(ast) {
         }
         if (isMember(node) && !node.computed)
             names.push([line, node.property.name, site]);
-        if (isMember(node) && node.computed && typeof node.property.value === 'string')
-            names.push([line, node.property.value, 'other']);
-        if (node.type === 'Property' && node.key.type === 'Identifier' && !node.shorthand)
-            names.push([line, node.key.name, 'other']);
-        if (node.type === 'ClassMethod')
-            names.push([line, node.name.name, 'other']);
+        // A string that holds a name alone, as obj['name'], a key, or Reflect.get(obj, 'name').
+        if (node.type === 'Literal' && typeof node.value === 'string' &&
+            /^[A-Za-z_$][\w$]*$/.test(node.value))
+            names.push([line, node.value, 'other']);
         for (const [childKey, child] of children(node)) {
-            // A member's property name, a property's key, and a method's name are read above.
-            const named = (isMember(node) && !node.computed && childKey === 'property') ||
-                (node.type === 'Property' && !node.shorthand && childKey === 'key') ||
-                (node.type === 'ClassMethod' && childKey === 'name');
-            if (!named)
+            // A member's property name is read above, with the member; every key is walked,
+            // a computed one as code.
+            if (!(isMember(node) && !node.computed && childKey === 'property'))
                 walk(child, node, childKey);
         }
     })(ast, null, null);

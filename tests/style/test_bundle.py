@@ -539,6 +539,26 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         # JavaScript ends a line at U+2028 and U+2029 too, and a first #! line is a comment.
         "this._id = s.connect('x', f);\n// a\u2028/*\ns.disconnect(this._id) /* */": "never",
         "#!s.disconnect(this._id)\nthis._id = s.connect('x', f);": "never disconnected",
+        # A key is read: a string key as the name it holds, a computed key as code.
+        "const {'connect': link} = global.stage;\nthis._id = link.call(global.stage, 'x', f);": (
+            "a signal this check cannot read"
+        ),
+        "({[global.stage.connect('notify::width', f)]: 0});": "a signal whose id is not kept",
+        "class A {\n    [GLib.timeout_add(0, 100, f)]() {}\n}": "a main loop source never removed",
+        "class A {\n    'connect'() {}\n}": "a signal this check cannot read",
+        "({get [global.stage.connect('x', f)]() {}});": "a signal whose id is not kept",
+        # A string that holds such a name alone is read as that name.
+        "const NAME = 'connect';\nthis._id = global.stage[NAME]('x', f);": "a signal this check",
+        "this._id = Reflect.get(global.stage, 'connect').call(global.stage, 'x', f);": (
+            "a signal this check cannot read"
+        ),
+        # this, taken apart or by another name, reaches a held this._laters.
+        "this._laters = global.compositor.get_laters();\nconst {_laters} = this;\n_laters.add();": (
+            "a main loop source this check cannot read"
+        ),
+        "this._laters = global.compositor.get_laters();\nconst self = this;\nself._laters.add();": (
+            "a main loop source this check cannot read"
+        ),
         # allowKeybinding changes the modes a key of GNOME's runs in, until it is set back.
         "Main.wm.allowKeybinding('switch-applications', Shell.ActionMode.ALL);": (
             "a key binding this check cannot read"
