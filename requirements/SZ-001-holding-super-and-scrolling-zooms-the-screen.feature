@@ -56,6 +56,7 @@ Feature: SZ-001 Holding Super and scrolling zooms the screen
     And Super is held and the wheel turns 2 notches up
     Then zoom is on
     And the zoomed view is centred on the pointer, within 2 pixels
+    And every frame from zoom on had the view where centred tracking puts it, within 2 pixels
 
   Scenario: A slow spin that turns zoom on zooms around the pointer
     Given zoom is off
@@ -63,7 +64,7 @@ Feature: SZ-001 Holding Super and scrolling zooms the screen
     When Super is held and the wheel turns 8 notches up, 250 ms apart
     Then zoom is on
     And the zoomed view is centred on the pointer, within 2 pixels
-    And on every frame of the spin the view was where centred tracking puts it, within 2 pixels
+    And every frame from zoom on had the view where centred tracking puts it, within 2 pixels
 
   Scenario: GNOME's zoom toggle comes on around the pointer
     Given zoom is off
@@ -73,6 +74,7 @@ Feature: SZ-001 Holding Super and scrolling zooms the screen
     And GNOME's zoom toggle turns zoom on
     Then zoom is on
     And the zoomed view is centred on the pointer, within 2 pixels
+    And every frame from zoom on had the view where centred tracking puts it, within 2 pixels
 
   Scenario: Zooming all the way out turns zoom off and keeps the last level
     Given zoom is on at 3x

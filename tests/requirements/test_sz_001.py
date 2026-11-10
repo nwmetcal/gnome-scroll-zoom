@@ -50,7 +50,7 @@ def centred_on_pointer(shell: Shell, tolerance: int) -> None:
 
 @then(
     parsers.parse(
-        "on every frame of the spin the view was where centred tracking puts it,"
+        "every frame from zoom on had the view where centred tracking puts it,"
         " within {tolerance:d} pixels"
     )
 )
@@ -70,8 +70,8 @@ def followed_every_frame(scene: Scene, tolerance: int) -> None:
         want_y = min(max(number(pointer[1]), h / 2), height - h / 2)
         worst = max(worst, abs(x + w / 2 - want_x), abs(y + h / 2 - want_y))
         judged += 1
-    assert judged > 10, f"only {judged} frames were drawn with zoom on"
-    assert worst <= tolerance, f"a frame of the spin had the view {worst:.1f} pixels off"
+    assert judged > 0, "no frame was drawn with zoom on"
+    assert worst <= tolerance, f"a frame since zoom came on had the view {worst:.1f} pixels off"
 
 
 @then("the Activities overview is closed")
@@ -79,23 +79,28 @@ def overview_closed(shell: Shell) -> None:
     assert shell.state()["overview"] is False
 
 
-def toggle(shell: Shell) -> None:
+def toggle(shell: Shell, scene: Scene) -> None:
     # GNOME's toggle, Super+Alt+8, sets this setting; the test shell runs no settings daemon.
+    # Every frame from the toggle on is kept, so the first frame with zoom on is judged too.
+    shell.call("return scrollZoomTest.record();")
     shell.call(
         "new imports.gi.Gio.Settings({schema_id: 'org.gnome.desktop.a11y.applications'})"
         ".set_boolean('screen-magnifier-enabled', true); return true;"
     )
     shell.wait_until("scrollZoomTest.state().on")
     shell.settle()
+    frames = shell.call("return scrollZoomTest.stopRecording();")
+    assert isinstance(frames, list)
+    scene.frames = [frame for frame in frames if isinstance(frame, dict)]
 
 
 @when("GNOME's zoom toggle turns zoom on")
-def toggle_on_now(shell: Shell) -> None:
-    toggle(shell)
+def toggle_on_now(shell: Shell, scene: Scene) -> None:
+    toggle(shell, scene)
 
 
 @then(parsers.parse("GNOME's zoom toggle turns zoom on at {zoom:g}x"))
-def toggle_on(shell: Shell, zoom: float) -> None:
-    toggle(shell)
+def toggle_on(shell: Shell, scene: Scene, zoom: float) -> None:
+    toggle(shell, scene)
     state = shell.state()
     assert abs(number(state["zoom"]) / zoom - 1) < 0.005, state
