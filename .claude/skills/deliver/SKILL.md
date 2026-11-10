@@ -36,9 +36,10 @@ task list and mark a step you skip `skip: <reason>`.
    Commit in small units that each pass, in an order that tells the story.
 6. **Prove.** `make format`, `make check`, `make test-shell`, then push. When the change
    touches the extension, the test shell, its harness, or a `@shell` step, also run
-   `make test-shell` twice at once, as a review round's reviewers do, and both must pass. Wait for CI's `check`
-   and `intent` to pass. When a job fails, read its log first: a failure in code the change
-   touches gets a commit; a flake gets one rerun, and a second identical failure is not one.
+   `make test-shell` twice at once, as a review round's reviewers do, and both must pass.
+   Wait for CI's `check` and `intent` to pass. When a job fails, read its log first: a
+   failure in code the change touches gets a commit; a flake gets one rerun, and a second
+   identical failure is not one.
 7. **Review round.** `make pr-fetch PR=<n>`, then `make loop-brief`. For each lens it names,
    spawn a fresh `reviewer` agent (`.claude/agents/reviewer.md`), all at once, each with the
    brief below. Check each review it returns with `make check-review REVIEW=<file>`, and post
