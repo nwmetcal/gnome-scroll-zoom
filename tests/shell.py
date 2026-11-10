@@ -11,7 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tests.paths import BUILD, ROOT
+from tests.paths import BUILD, EXTENSION, ROOT
 
 TEST_SHELL = ROOT / "dev" / "test-shell.sh"
 HARNESS = ROOT / "tests" / "shell_harness.js"
@@ -41,15 +41,24 @@ class ShellError(RuntimeError):
     """The test shell refused or failed a request."""
 
 
-def gnome_shell_50() -> bool:
-    """Whether this machine runs GNOME Shell 50, which the test shell needs."""
+def gnome_shell_refusal() -> str | None:
+    """Why the test shell will not run on this machine's GNOME Shell, or None when it will:
+    only on a major metadata.json lists (decision 0008)."""
     try:
         version = subprocess.run(
             ["gnome-shell", "--version"], capture_output=True, text=True, check=True
-        ).stdout
+        ).stdout.split()[-1]
     except (OSError, subprocess.CalledProcessError):
-        return False
-    return version.split()[-1].startswith("50.")
+        return "the @shell scenarios need GNOME Shell, and this machine has no GNOME Shell"
+    metadata: dict[str, list[str]] = json.loads((EXTENSION / "metadata.json").read_text())
+    listed = metadata["shell-version"]
+    if version.split(".")[0] in listed:
+        return None
+    return (
+        f"the @shell scenarios run on a GNOME Shell metadata.json lists ({', '.join(listed)}),"
+        f" and this machine runs {version}: to try it, list its major on a branch"
+        " (decision 0008)"
+    )
 
 
 @dataclass
