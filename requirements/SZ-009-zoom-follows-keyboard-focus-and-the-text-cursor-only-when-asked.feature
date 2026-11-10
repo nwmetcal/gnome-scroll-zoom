@@ -27,6 +27,9 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
   most 60 pixels: half the middle button's width, the room a view that shows the whole button
   leaves past its middle, and more than the 24 pixels GNOME leaves for the pointer when it
   pushes the view. A view centred on either overshoots by more than 110 pixels each way.
+  GNOME centres the view on the top-left corner of the text cursor's cell, up to 8 pixels
+  from the middle of the line's text, so a view centred on the text cursor is within 10
+  pixels of that middle.
 
   Scenario: Keyboard focus moving out of view leaves the view with the pointer
     Given GNOME's own settings centre the view on keyboard focus and on the text cursor
@@ -75,6 +78,15 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
     Then after 3 s the view shows the line's text whole, overshooting by at most 60 pixels
     And GNOME's own settings still centre the view on keyboard focus and on the text cursor
 
+  Scenario: Following keyboard focus, turned on, goes no further after GNOME's own settings change
+    Given following keyboard focus is turned on in Scroll Zoom's settings
+    And the focus test app is open with its first button focused
+    And zoom is on at 3x with the pointer at 200, 130
+    When GNOME's own settings change to centre the view on keyboard focus and on the text cursor
+    And Tab moves keyboard focus to the middle button
+    Then after 3 s the view shows the middle button's middle, overshooting by at most 60 pixels
+    And GNOME's own settings still centre the view on keyboard focus and on the text cursor
+
   Scenario: Following keyboard focus, turned on, leaves an app's own text cursor unfollowed
     Given GNOME's own settings centre the view on keyboard focus and on the text cursor
     And following keyboard focus is turned on in Scroll Zoom's settings
@@ -90,11 +102,19 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
     When Tab moves keyboard focus to the middle button
     Then for 3 s every frame has the view where the pointer puts it, within 2 pixels
 
-  Scenario: Turning the extension off hands GNOME's own following back
+  Scenario: Turning the extension off hands GNOME's own following of focus back
     Given GNOME's own settings centre the view on keyboard focus and on the text cursor
     And the focus test app is open with its first button focused
     And zoom is on at 3x with the pointer at 200, 130
     When the extension is turned off
     And Tab moves keyboard focus to the middle button
     Then after 3 s the view is centred on the middle button's middle, within 2 pixels
+    And GNOME's own settings still centre the view on keyboard focus and on the text cursor
+
+  Scenario: Turning the extension off hands GNOME's own following of the text cursor back
+    Given GNOME's own settings centre the view on keyboard focus and on the text cursor
+    And the focus test app is open, moving the text cursor in its line on its own
+    And zoom is on at 3x with the pointer at 200, 130
+    When the extension is turned off
+    Then after 3 s the view is centred on the line's text, within 10 pixels
     And GNOME's own settings still centre the view on keyboard focus and on the text cursor

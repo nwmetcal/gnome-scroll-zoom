@@ -23,6 +23,7 @@ UUID = "scroll-zoom@nhicc"
 TARGETS = {
     "middle button's middle": (760.0, 400.0, 0.0, 0.0),
     "line's text whole": (740.0, 560.0, 16.0, 16.0),
+    "line's text": (740.0, 560.0, 16.0, 16.0),
 }
 SWITCHES = {"keyboard focus": "follow-focus", "the text cursor": "follow-text-cursor"}
 MAGNIFIER = "new imports.gi.Gio.Settings({schema_id: 'org.gnome.desktop.a11y.magnifier'})"
