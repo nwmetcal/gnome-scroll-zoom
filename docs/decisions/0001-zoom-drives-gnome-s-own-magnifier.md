@@ -39,5 +39,5 @@ hands the magnifier back unchanged.
 
 A zoom of its own would need everything above rewritten: tracking, shortcuts, settings. The
 seam is that the extension touches the magnifier in a few places: `RegionSmoothing` in
-`smoothing.js`, and `_applyLevel`, `_routeMagFactorChanges`, and `_routeFollowing` in
-`extension.js`.
+`smoothing.js`, and `_applyLevel`, `_routeMagFactorChanges`, and `_routeFollowing` and the
+handlers it connects (decision 0007) in `extension.js`.
