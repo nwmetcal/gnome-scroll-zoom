@@ -18,6 +18,13 @@ const STYLES = [
     ['standard', 'GNOME standard', 'GNOME\'s own scaling, slightly blurry'],
 ];
 
+const FOLLOWING = [
+    ['follow-focus', 'Follow keyboard focus',
+        'Bring a button or field into view when Tab or an app moves focus to it'],
+    ['follow-text-cursor', 'Follow the text cursor',
+        'Bring the text cursor into view as you type or as an app moves it, as a terminal does'],
+];
+
 const SHORTCUTS = [
     ['magnifier', 'Turn zoom on or off'],
     ['magnifier-zoom-in', 'Zoom in'],
@@ -81,6 +88,19 @@ export default class ScrollZoomPreferences extends ExtensionPreferences {
         });
         settings.bind('invert-direction', invertRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         scrollGroup.add(invertRow);
+
+        const followGroup = new Adw.PreferencesGroup({
+            title: 'Following',
+            description: 'Off, the zoomed view stays where the pointer puts it. On, it moves ' +
+                'only as far as it takes to show what moved.',
+        });
+        page.add(followGroup);
+
+        for (const [key, title, subtitle] of FOLLOWING) {
+            const row = new Adw.SwitchRow({title, subtitle});
+            settings.bind(key, row, 'active', Gio.SettingsBindFlags.DEFAULT);
+            followGroup.add(row);
+        }
 
         const imageGroup = new Adw.PreferencesGroup({title: 'Zoomed image'});
         page.add(imageGroup);
