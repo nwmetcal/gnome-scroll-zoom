@@ -81,7 +81,7 @@ export default class ScrollZoomExtension extends Extension {
 
         this._motion = new ZoomMotion(Math.log(this._settings.get_double('max-zoom')));
         this._timeline = new Clutter.Timeline({actor: global.stage, duration: 1000, repeat_count: -1});
-        this._timeline.connect('new-frame', () => this._onFrame());
+        this._timeline.connectObject('new-frame', () => this._onFrame(), this);
 
         this._region = Main.magnifier?.getZoomRegions()[0] ?? null;
         if (this._region) {
@@ -121,6 +121,7 @@ export default class ScrollZoomExtension extends Extension {
             global.compositor.get_laters().remove(this._panLater);
 
         this._timeline.stop();
+        this._timeline.disconnectObject(this);
         this._timeline = null;
         // Mid-glide, finish where the zoom was heading.
         if (!this._motion.settled && Main.magnifier?.isActive()) {
