@@ -100,6 +100,12 @@ EOF
             echo "Test shell running ($size). Log: $ROOT/shell.log"
             return 0
         fi
+        # A shell that has exited will not come up; say why now rather than at the timeout.
+        if [[ -s "$ROOT/pid" ]] && ! kill -0 "$(cat "$ROOT/pid")" 2>/dev/null; then
+            echo "Test shell exited. Log:" >&2
+            tail -40 "$ROOT/shell.log" >&2
+            return 1
+        fi
         sleep 0.2
     done
     echo "Test shell did not come up. Log:" >&2
