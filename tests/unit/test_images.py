@@ -17,6 +17,7 @@ from tests.images import (
     far_from_ink,
     ink,
     ink_amount,
+    inside_corner_gap,
     shrunk,
 )
 
@@ -153,3 +154,28 @@ def test_a_letter_cut_through_is_broken_into_pieces() -> None:
     cut = drawn(u_shape, (12, 12))
     cut[:, 6] = 1.0
     assert broken_pieces(drawn(u_shape, (12, 12)), cut) == [2]
+
+
+def ell(fillet: float) -> Callable[[Gray, Gray], Gray]:
+    """An L, its upright 12 wide and its foot 12 tall, with its inside corner filled to a
+    radius."""
+
+    def inked(x: Gray, y: Gray) -> Gray:
+        upright = (x >= 10) & (x < 22) & (y >= 8) & (y < 60)
+        foot = (x >= 10) & (x < 52) & (y >= 48) & (y < 60)
+        cx, cy = 22 + fillet, 48 - fillet
+        corner = (x >= 22) & (x < cx) & (y >= cy) & (y < 48)
+        filled = corner & ((x - cx) ** 2 + (y - cy) ** 2 >= fillet**2)
+        return (upright | foot | filled).astype(float)
+
+    return inked
+
+
+def test_a_crisp_inside_corner_has_no_gap() -> None:
+    assert inside_corner_gap(ink(drawn(ell(0.0), (60, 66)))) < 0.5
+
+
+@pytest.mark.parametrize("radius", [3.0, 6.0])
+def test_a_filled_inside_corner_is_its_radius_times_0_41_out(radius: float) -> None:
+    gap = inside_corner_gap(ink(drawn(ell(radius), (60, 66))))
+    assert gap == pytest.approx(radius * (2**0.5 - 1), abs=0.4)

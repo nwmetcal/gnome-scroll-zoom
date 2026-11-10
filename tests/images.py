@@ -169,6 +169,31 @@ def corner_gaps(t: Gray) -> list[float]:
     return gaps
 
 
+def inside_corner_gap(t: Gray) -> float:
+    """For an L of ink (see `ink`), its upright on the left and its foot along the bottom, on
+    paper: how far out from where the upright's right edge meets the foot's top edge the ink
+    stays at least half, along the inside corner's diagonal into the paper, in pixels. A
+    right angle drawn crisply has its half-ink outline through that point, so near 0; an
+    inside corner filled to a radius r is r times 0.41 out."""
+    columns = np.nonzero(t.max(axis=0) >= 0.5)[0]
+    rows = np.nonzero(t.max(axis=1) >= 0.5)[0]
+    if len(columns) < 3 or len(rows) < 3:
+        raise ValueError("no L of ink to measure")
+    left, right, top, bottom = int(columns[0]), int(columns[-1]), int(rows[0]), int(rows[-1])
+    width = t.shape[1]
+    # Rows across the upper third cross only the upright; columns over the right third of
+    # the foot cross only the foot.
+    upper = range(top + (bottom - top) // 6, top + (bottom - top) // 3 + 1)
+    edge_x = width - float(np.mean([_rise(t[y, ::-1]) for y in upper]))
+    over = range(right - (right - left) // 3, right - (right - left) // 6 + 1)
+    edge_y = float(np.mean([_rise(t[:, x]) for x in over]))
+    reach = float(min(right - left, bottom - top)) / 2
+    for s in np.arange(0.0, reach, 0.05):
+        if _at(t, edge_x + s / np.sqrt(2), edge_y - s / np.sqrt(2)) < 0.5:
+            return float(s)
+    return reach
+
+
 def shrunk(pixels: Gray, zoom: int) -> Gray:
     """A zoomed view shrunk back to the size it was zoomed from: each pixel the mean of the
     zoom-by-zoom block it was drawn as."""

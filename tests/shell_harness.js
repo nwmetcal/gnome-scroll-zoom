@@ -31,6 +31,10 @@
         gradient: {x: 30, y: 56, width: 64, height: 40},
         serif: {x: 8, y: 104, width: 104, height: 22},
         square: {x: 20.3, y: 60.6, width: 6, height: 6},
+        ell: {x: 19.3, y: 72.6, width: 8, height: 10, stroke: 2},
+        light: {x: 0, y: 150, width: 120, height: 80},
+        lightText: {x: 8, y: 154, width: 104, height: 44},
+        lightSerif: {x: 8, y: 202, width: 104, height: 22},
     };
 
     const extension = () => Main.extensionManager.lookup(UUID);
@@ -196,9 +200,8 @@
                 this._pattern.show();
                 return true;
             }
-            const area = new St.DrawingArea({
-                x: PATTERN.x, y: PATTERN.y, width: PATTERN.width, height: PATTERN.height,
-            });
+            const group = new St.Widget({x: PATTERN.x, y: PATTERN.y});
+            const area = new St.DrawingArea({width: PATTERN.width, height: PATTERN.height});
             area.connect('repaint', () => {
                 const cr = area.get_context();
                 cr.setSourceRGB(1, 1, 1);
@@ -215,8 +218,11 @@
                 cr.rectangle(PATTERN.fullStem, PATTERN.stems.y, 1, PATTERN.stems.height);
                 cr.rectangle(PATTERN.splitStem, PATTERN.stems.y, 1, PATTERN.stems.height);
                 // A square whose sides all fall between pixels, as a letter's mostly do.
-                const {square} = PATTERN;
+                const {square, ell} = PATTERN;
                 cr.rectangle(square.x, square.y, square.width, square.height);
+                // An L, so it has an inside corner too, set off the pixel grid as well.
+                cr.rectangle(ell.x, ell.y, ell.stroke, ell.height);
+                cr.rectangle(ell.x, ell.y + ell.height - ell.stroke, ell.width, ell.stroke);
                 cr.fill();
                 // Serif capitals, with upright strokes the font draws thick, and bars and
                 // serifs it draws thin.
@@ -235,8 +241,35 @@
                 }
                 cr.$dispose();
             });
-            Main.uiGroup.add_child(area);
-            this._pattern = area;
+            // The same text and serif capitals in light ink on a dark ground, as a dark
+            // theme draws them, below the pattern and out of view where it is zoomed over.
+            const {light, lightText, lightSerif} = PATTERN;
+            const dark = new St.DrawingArea({
+                x: light.x, y: light.y, width: light.width, height: light.height,
+            });
+            dark.connect('repaint', () => {
+                const cr = dark.get_context();
+                cr.setSourceRGB(0.1, 0.1, 0.1);
+                cr.paint();
+                cr.setSourceRGB(1, 1, 1);
+                const layout = PangoCairo.create_layout(cr);
+                layout.set_font_description(Pango.FontDescription.from_string('Ubuntu Sans 11px'));
+                layout.set_width(lightText.width * Pango.SCALE);
+                layout.set_text('The quick brown fox jumps over the lazy dog', -1);
+                cr.moveTo(lightText.x - light.x, lightText.y - light.y);
+                PangoCairo.show_layout(cr, layout);
+                const serif = PangoCairo.create_layout(cr);
+                serif.set_font_description(
+                    Pango.FontDescription.from_string('Liberation Serif 15px'));
+                serif.set_text('THE HILL', -1);
+                cr.moveTo(lightSerif.x - light.x, lightSerif.y - light.y);
+                PangoCairo.show_layout(cr, serif);
+                cr.$dispose();
+            });
+            group.add_child(area);
+            group.add_child(dark);
+            Main.uiGroup.add_child(group);
+            this._pattern = group;
             return true;
         },
     };

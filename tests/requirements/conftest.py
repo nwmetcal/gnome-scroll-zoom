@@ -31,6 +31,8 @@ class Scene:
 
     zoom: float = 1.0
     pointer: tuple[float, float] = PATTERN_VIEW
+    # The part of the test pattern zoomed over, by the name a scenario gives it.
+    part: str = ""
     captures: dict[str, Path] = field(default_factory=dict[str, Path])
     frames: list[dict[str, Json]] = field(default_factory=list[dict[str, Json]])
 
@@ -126,7 +128,12 @@ def zoom_over_pattern(shell: Shell, scene: Scene, zoom: float) -> None:
 
 
 # The parts of the test pattern a scenario zooms over by name, as the harness names them.
-PATTERN_PARTS = {"text": "text", "serif line": "serif"}
+PATTERN_PARTS = {
+    "text": "text",
+    "serif line": "serif",
+    "light text": "lightText",
+    "light serif line": "lightSerif",
+}
 # How far below a part the pointer rests to zoom over it, in pixels: past the pointer's
 # outline.
 POINTER_CLEARANCE_PX = 3
@@ -140,6 +147,7 @@ def zoom_over_part(shell: Shell, scene: Scene, zoom: float, part: str) -> None:
     box = pattern_box(shell, PATTERN_PARTS[part])
     pointer = (round(box.x + box.width / 2), round(box.y + box.height + POINTER_CLEARANCE_PX))
     zoom_to(shell, scene, zoom, pointer)
+    scene.part = part
     time.sleep(REPAINT_S)
 
 

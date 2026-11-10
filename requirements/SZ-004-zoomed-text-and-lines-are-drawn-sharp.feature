@@ -7,9 +7,10 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
   the weight the font gives them, and a serif font's thin strokes stay as thin as it draws
   them beside its thick ones, so zoomed text reads as the font it is. Each pixel of the
   screen keeps the ink it had: the zoomed view shrunk back to the screen's own size is the
-  screen again. The test pattern has a line of text, two thin stems, a square set off the
-  pixel grid, a gradient, and a line of serif capitals, its text antialiased in gray, as GTK
-  draws text.
+  screen again. The test pattern has a line of text, two thin stems, a square and an L set
+  off the pixel grid, a gradient, and a line of serif capitals, its text antialiased in gray,
+  as GTK draws text, and below it the text and serif line again in light ink on a dark
+  ground, as a dark theme draws them, held to the same marks with the light ink as ink.
 
   At 6x each pixel of the screen is drawn 6 pixels wide, enough to see a corner rounded or a
   stroke thickened. A crisp right angle measures about 0.3 pixels in from where its edges
@@ -61,6 +62,7 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
     Given zoom is on at 6x over the test pattern
     When the zoomed screen is captured with sharp smoothing
     Then every corner of the two stems and the square is within 1 pixel of a right angle
+    And the inside corner of the L is within 1 pixel of a right angle
 
   Scenario Outline: Zoomed text keeps the weight of its strokes
     Given zoom is on at 6x over the test pattern's <part>
@@ -68,18 +70,25 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
     Then the <part> carries within 5 percent of the ink it carries with GNOME's scaling
 
     Examples:
-      | part       |
-      | text       |
-      | serif line |
+      | part             |
+      | text             |
+      | serif line       |
+      | light text       |
+      | light serif line |
 
-  Scenario: A serif font keeps its thick and thin strokes
+  Scenario Outline: A serif font keeps its thick and thin strokes
     Given the test pattern is captured unzoomed
-    And zoom is on at 6x over the test pattern's serif line
+    And zoom is on at 6x over the test pattern's <part>
     When the zoomed screen is captured with sharp smoothing and with GNOME's standard scaling
-    Then shrunk back to its unzoomed size, the serif line keeps each pixel's ink within 5 percent on average
-    And the serif line has at most a third as many in-between pixels as with GNOME's scaling
+    Then shrunk back to its unzoomed size, the <part> keeps each pixel's ink within 5 percent on average
+    And the <part> has at most a third as many in-between pixels as with GNOME's scaling
     And its thin bars at least half inked are drawn as tall as the font draws them, within 1 pixel on average
     And its thin bars' faint ends, under half inked, are drawn as tall as the font draws them, within 1 pixel on average
+
+    Examples:
+      | part             |
+      | serif line       |
+      | light serif line |
 
   Scenario Outline: Letters stay whole
     Given zoom is on at <zoom>x over the test pattern's <part>
@@ -87,11 +96,15 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
     Then every letter of the <part> GNOME's scaling draws in one piece is drawn in one piece
 
     Examples:
-      | part       | zoom |
-      | text       | 6    |
-      | serif line | 6    |
-      | text       | 4    |
-      | text       | 3    |
+      | part             | zoom |
+      | text             | 6    |
+      | serif line       | 6    |
+      | text             | 4    |
+      | text             | 3    |
+      | light text       | 6    |
+      | light serif line | 6    |
+      | light text       | 4    |
+      | light text       | 3    |
 
   Scenario Outline: Paper away from the text stays paper, bolder or not
     Given the test pattern is captured unzoomed

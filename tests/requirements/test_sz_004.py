@@ -8,6 +8,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from tests.images import (
     Box,
+    Gray,
     bar_heights,
     best_shift,
     broken_pieces,
@@ -18,6 +19,7 @@ from tests.images import (
     ink,
     ink_amount,
     inset,
+    inside_corner_gap,
     shrunk,
 )
 from tests.requirements.conftest import (
@@ -38,6 +40,17 @@ STYLES = {
     "soft smoothing": "soft",
     "GNOME's standard scaling": "standard",
 }
+# Parts of the test pattern drawn in light ink on a dark ground: measured as their negative,
+# so their ink is what each measure takes for ink.
+LIGHT_PARTS = {"light text", "light serif line"}
+
+
+def seen(scene: Scene, name: str, part: str) -> Gray:
+    """A capture as the measures take it: as drawn, or for a light part, its negative."""
+    image = scene.image(name)
+    return 1.0 - image if part in LIGHT_PARTS else image
+
+
 # The harness draws each stem one pixel wide.
 STEM_WIDTH_PX = 1.0
 
@@ -77,8 +90,8 @@ SHARES = {"two thirds": 2 / 3, "a third": 1 / 3}
 )
 def less_blur(shell: Shell, scene: Scene, part: str, share: str) -> None:
     box = scene.on_screen(pattern_box(shell, PATTERN_PARTS[part]))
-    sharp = in_between_fraction(crop(scene.image("text"), box))
-    standard = in_between_fraction(crop(scene.image("standard"), box))
+    sharp = in_between_fraction(crop(seen(scene, "text", part), box))
+    standard = in_between_fraction(crop(seen(scene, "standard", part), box))
     assert sharp <= standard * SHARES[share], (
         f"{sharp:.3f} in between, against GNOME's {standard:.3f}"
     )
@@ -133,8 +146,8 @@ def corners_square(shell: Shell, scene: Scene, most: float) -> None:
 )
 def keeps_weight(shell: Shell, scene: Scene, part: str, most: float) -> None:
     box = scene.on_screen(pattern_box(shell, PATTERN_PARTS[part]))
-    sharp = ink_amount(crop(scene.image("text"), box))
-    standard = ink_amount(crop(scene.image("standard"), box))
+    sharp = ink_amount(crop(seen(scene, "text", part), box))
+    standard = ink_amount(crop(seen(scene, "standard", part), box))
     change = (sharp / standard - 1) * 100
     assert abs(change) <= most, f"{change:+.1f} percent of the ink with GNOME's scaling"
 
@@ -147,8 +160,8 @@ def keeps_weight(shell: Shell, scene: Scene, part: str, most: float) -> None:
 )
 def keeps_each_pixel(shell: Shell, scene: Scene, part: str, most: float) -> None:
     source = pattern_box(shell, PATTERN_PARTS[part])
-    unzoomed = crop(scene.image("unzoomed"), source)
-    back = shrunk(crop(scene.image("text"), scene.on_screen(source)), round(scene.zoom))
+    unzoomed = crop(seen(scene, "unzoomed", part), source)
+    back = shrunk(crop(seen(scene, "text", part), scene.on_screen(source)), round(scene.zoom))
     paper, darkest = float(unzoomed.max()), float(unzoomed.min())
     before = (paper - unzoomed) / (paper - darkest)
     after = (paper - back) / (paper - darkest)
@@ -173,9 +186,9 @@ BARS = {
     )
 )
 def bars_thin(shell: Shell, scene: Scene, bars: str, most: str) -> None:
-    source = pattern_box(shell, "serif")
-    unzoomed = crop(scene.image("unzoomed"), source)
-    zoomed = crop(scene.image("text"), scene.on_screen(source))
+    source = pattern_box(shell, PATTERN_PARTS[scene.part])
+    unzoomed = crop(seen(scene, "unzoomed", scene.part), source)
+    zoomed = crop(seen(scene, "text", scene.part), scene.on_screen(source))
     paper, darkest = float(unzoomed.max()), float(unzoomed.min())
     zoom = round(scene.zoom)
     heights = [
@@ -214,5 +227,15 @@ def paper_stays(shell: Shell, scene: Scene, most: int) -> None:
 )
 def letters_whole(shell: Shell, scene: Scene, part: str) -> None:
     box = scene.on_screen(pattern_box(shell, PATTERN_PARTS[part]))
-    broken = broken_pieces(crop(scene.image("standard"), box), crop(scene.image("text"), box))
+    broken = broken_pieces(
+        crop(seen(scene, "standard", part), box), crop(seen(scene, "text", part), box)
+    )
     assert not broken, f"{len(broken)} letters drawn in {', '.join(map(str, broken))} pieces"
+
+
+@then(parsers.parse("the inside corner of the L is within {most:g} pixel of a right angle"))
+def inside_corner_square(shell: Shell, scene: Scene, most: float) -> None:
+    # With a pixel of paper around it, short of the square above and the gradient beside it.
+    around = inset(scene.on_screen(pattern_box(shell, "ell")), -scene.zoom)
+    gap = inside_corner_gap(ink(crop(scene.image("text"), around)))
+    assert gap <= most, f"inside corner {gap:.1f} pixels out"
