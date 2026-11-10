@@ -115,6 +115,7 @@ export default class ScrollZoomExtension extends Extension {
         this._smoothing = null;
         this._held = null;
         this._restId = 0;
+        this._pushAnchor = null;
         this._pointerMovedAtS = -Infinity;
 
         this._motion = new ZoomMotion(Math.log(this._settings.get_double('max-zoom')));
@@ -254,6 +255,9 @@ export default class ScrollZoomExtension extends Extension {
         // Zooming out with zoom off does nothing.
         if (direction < 0 && this._motion.settled && !Main.magnifier.isActive())
             return;
+        // A new glide starts from where the pointer is drawn now.
+        if (this._motion.settled)
+            this._pushAnchor = null;
         this._syncMotion();
         this._followPointer = true;
         apply();
@@ -365,6 +369,8 @@ export default class ScrollZoomExtension extends Extension {
 
     _onPointerMoved() {
         this._pointerMovedAtS = now();
+        // Where the pointer is drawn changes with it, so the next zoom starts from there.
+        this._pushAnchor = null;
         if (this._held)
             this._waitForRest(POINTER_REST_MS);
         this._queuePan();
@@ -494,28 +500,37 @@ export default class ScrollZoomExtension extends Extension {
         this._motion.reset(active ? Math.log(this._region.getMagFactor()[0]) : 0, now());
     }
 
-    // Under GNOME's push, zooming keeps the pointer where it is drawn on the screen, so neither
-    // it nor what is under it jumps. GNOME's own push zooms around the view's middle and then
-    // pushes the pointer back into view, toward an edge. The pointer stays as near as keeps
-    // the whole of its image, which GNOME's push holds in the view, on the screen, so the view
-    // stays still as the pointer then moves; and the view stays within the screen, so zooming
-    // back toward 1x brings the pointer back to where it is. `fromOff` is for zoom coming on,
-    // when the pointer is drawn where it is. Under GNOME's other following, no centre.
+    // Under GNOME's push, zooming keeps the pointer where it is drawn, so neither it nor what
+    // is under it jumps. GNOME's own push zooms around the view's middle and then pushes the
+    // pointer back into view, toward an edge. The pointer stays where it was drawn as the
+    // glide began, as near as keeps the whole of its image, which GNOME's push holds in the
+    // view, within the view, so the view stays still as the pointer then moves, and a glide
+    // that zooms in deep and turns back brings it back. The view is GNOME's, on the whole
+    // screen or half of it, and what it shows stays within the screen. `fromOff` is for zoom
+    // coming on, when the pointer is drawn where it is. Under GNOME's other following, no
+    // centre.
     _pushCentre(factor, fromOff) {
-        if (this._magSettings.get_enum('mouse-tracking') !== MOUSE_PUSH)
-            return null;
         const region = this._region;
+        if (this._magSettings.get_enum('mouse-tracking') !== MOUSE_PUSH ||
+            typeof region._changeROI !== 'function' || !region._mouseSourceActor)
+            return null;
         const pointer = global.get_pointer();
-        const roi = region.getROI();
-        const was = region.getMagFactor()[0];
+        const view = [region._viewPortX, region._viewPortY,
+            region._viewPortWidth, region._viewPortHeight];
+        if (fromOff || !this._pushAnchor) {
+            const roi = region.getROI();
+            const was = region.getMagFactor()[0];
+            this._pushAnchor = [0, 1].map(axis => fromOff
+                ? pointer[axis] : view[axis] + (pointer[axis] - roi[axis]) * was);
+        }
         const image = region._mouseSourceActor.get_size();
         const screen = [global.screen_width, global.screen_height];
         const [xCenter, yCenter] = [0, 1].map(axis => {
-            const size = screen[axis];
-            const drawn = fromOff ? pointer[axis] : (pointer[axis] - roi[axis]) * was;
-            const kept = Math.min(Math.max(drawn, 0), size - image[axis] * factor);
-            const start = Math.min(Math.max(pointer[axis] - kept / factor, 0),
-                size - size / factor);
+            const [origin, size] = [view[axis], view[axis + 2]];
+            const kept = Math.min(Math.max(this._pushAnchor[axis], origin),
+                origin + size - image[axis] * factor);
+            const start = Math.min(Math.max(pointer[axis] - (kept - origin) / factor, 0),
+                screen[axis] - size / factor);
             return start + size / factor / 2;
         });
         return {xCenter, yCenter};
