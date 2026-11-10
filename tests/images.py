@@ -58,9 +58,13 @@ def inset(box: Box, margin: float) -> Box:
 
 
 def crop(image: Gray, box: Box) -> Gray:
-    """The pixels inside a box, rounded inward to whole pixels."""
+    """The pixels inside a box, rounded inward to whole pixels. A box that is not wholly on
+    the image is an error, not a smaller or empty crop, so a step never judges nothing."""
     left, top = int(np.ceil(box.x)), int(np.ceil(box.y))
     right, bottom = int(box.x + box.width), int(box.y + box.height)
+    height, width = image.shape[:2]
+    if left < 0 or top < 0 or right > width or bottom > height or right <= left or bottom <= top:
+        raise ValueError(f"{box} is not wholly on the {width} by {height} image")
     return image[top:bottom, left:right]
 
 

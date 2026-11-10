@@ -88,9 +88,7 @@ def full_screen_app(shell: Shell, kind: str) -> None:
     open_app(shell, kind)
 
 
-@given(
-    "a full-screen Wayland app that the person has allowed to take over the keyboard's shortcuts"
-)
+@given("a full-screen Wayland app the person allowed to take over the keyboard's shortcuts")
 def app_with_shortcuts(shell: Shell) -> None:
     open_app(shell, "Wayland", "--take-shortcuts")
     # GNOME asks the person in a dialog; Enter chooses Allow, its default.
@@ -117,6 +115,7 @@ def text_both_ways(shell: Shell, scene: Scene) -> tuple[Gray, Gray]:
         capture(shell, scene, "standard")
         set_style(shell, "text")
     box = viewed(TEXT, view(shell), SCREEN)
+    # crop refuses a box off the screen: the zoomed view must show the app's text to judge it.
     return crop(scene.image("sharp"), box), crop(scene.image("standard"), box)
 
 
@@ -129,8 +128,7 @@ def correlation(a: Gray, b: Gray) -> float:
 
 @then(
     parsers.parse(
-        "the app's zoomed text matches what GNOME's scaling shows,"
-        " by a correlation of at least {least:g}"
+        "the app's zoomed text matches GNOME's own, by a correlation of at least {least:g}"
     )
 )
 def app_text_there(shell: Shell, scene: Scene, least: float) -> None:
@@ -139,9 +137,7 @@ def app_text_there(shell: Shell, scene: Scene, least: float) -> None:
     assert alike >= least, f"a correlation of {alike:.3f} with GNOME's own scaling"
 
 
-@then(
-    "the app's zoomed text has at most two thirds as many in-between pixels as with GNOME's scaling"
-)
+@then("the app's zoomed text has at most two thirds of GNOME's in-between pixels")
 def app_text_sharp(shell: Shell, scene: Scene) -> None:
     sharp_pixels, standard_pixels = text_both_ways(shell, scene)
     sharp = in_between_fraction(sharp_pixels)

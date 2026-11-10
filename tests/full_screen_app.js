@@ -4,14 +4,15 @@
 // shortcuts, as a virtual machine, a remote desktop, or a game that grabs the keyboard does.
 //
 // Run inside the test shell:  dev/test-shell.sh client gjs -m tests/full_screen_app.js
-// As an X11 app, through the test shell's Xwayland: GDK_BACKEND=x11 DISPLAY=<its display>.
+// As an X11 app, through the test shell's Xwayland: GDK_BACKEND=x11, and the DISPLAY and
+// XAUTHORITY the test shell's own environment holds (scrollZoomTest.xDisplay()).
 import Gdk from 'gi://Gdk?version=4.0';
 import Gtk from 'gi://Gtk?version=4.0';
 
 export const TITLE = 'Full-screen test app';
 // Where things are on the screen, in pixels; the window fills it from the top-left corner.
 export const TEXT = {x: 120, y: 120};
-export const BAR = {left: 500, travel: 280, y: 600, width: 20, height: 40, speedPxPerMs: 0.4};
+export const BAR = {left: 500, travel: 280, y: 600, width: 20, height: 40, speedPxPerMs: 0.1};
 
 const takeShortcuts = ARGV.includes('--take-shortcuts');
 const app = new Gtk.Application({application_id: 'dev.scrollzoom.FullScreen'});
@@ -29,7 +30,8 @@ app.connect('activate', () => {
         margin_start: TEXT.x, margin_top: TEXT.y,
     }));
 
-    // A sawtooth, so two moments a few hundred ms apart never put the bar in the same place.
+    // A sawtooth that goes round every 2.8 s, so two moments from 300 ms to 2.5 s apart find
+    // the bar at least 30 pixels apart, 90 pixels of the screen at 3x.
     const bar = new Gtk.DrawingArea({hexpand: true, vexpand: true});
     bar.set_draw_func((_area, cr) => {
         const ms = (bar.get_frame_clock()?.get_frame_time() ?? 0) / 1000;
