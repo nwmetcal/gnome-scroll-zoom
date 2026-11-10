@@ -33,6 +33,7 @@ GNOME_FOLLOWING = {
     "centre the view on keyboard focus and on the text cursor": "centered",
     "push the view to keyboard focus and to the text cursor": "push",
     "follow keyboard focus and the text cursor in proportion": "proportional",
+    "follow neither keyboard focus nor the text cursor": "none",
 }
 # A resting hand moves the pointer a little now and then; this keeps GNOME holding a follow
 # back, since it waits for the pointer to rest 1000 ms.
@@ -113,9 +114,14 @@ def open_app(shell: Shell, *args: str) -> None:
     time.sleep(APP_READY_S)
 
 
-@given("GNOME's own settings centre the view on keyboard focus and on the text cursor")
-def gnome_centres(shell: Shell) -> None:
-    set_gnome_following(shell, "centered")
+@given(parsers.parse("GNOME's own settings {how}"))
+def gnome_follows(shell: Shell, how: str) -> None:
+    set_gnome_following(shell, GNOME_FOLLOWING[how])
+
+
+@given(parsers.parse("the maximum zoom is set to {zoom:g}x in Scroll Zoom's settings"))
+def max_zoom(shell: Shell, zoom: float) -> None:
+    shell.call(f"scrollZoomTest.settings().set_double('max-zoom', {zoom}); return true;")
 
 
 def switch(shell: Shell, what: str) -> str:
@@ -144,6 +150,23 @@ def given_off(shell: Shell) -> None:
 def given_on(shell: Shell) -> None:
     shell.call(f"Main.extensionManager.enableExtension('{UUID}'); return true;")
     shell.wait_until("scrollZoomTest.state().extension === 1")
+
+
+TAB = [step(1, "press", "tab"), step(20, "release", "tab")]
+SHIFT_TAB = [step(1, "press", "shift"), *TAB, step(20, "release", "shift")]
+
+
+def wiggle_with(
+    pointer: tuple[float, float], duration_ms: int, at_ms: dict[int, list[list[Json]]]
+) -> list[list[Json]]:
+    """A wiggle with other steps put in it, each set of them about `at` ms into it."""
+    steps: list[list[Json]] = []
+    for index, move in enumerate(wiggle(pointer, duration_ms)):
+        for at, extra in at_ms.items():
+            if at // WIGGLE_GAP_MS == index:
+                steps += extra
+        steps.append(move)
+    return steps
 
 
 def wiggle(pointer: tuple[float, float], duration_ms: int) -> list[list[Json]]:
@@ -234,6 +257,42 @@ def off_while_moving(shell: Shell, scene: Scene, watch: Watch, duration_ms: int)
     watch.since = time.monotonic()
 
 
+@when(
+    parsers.parse(
+        "Tab and then Shift+Tab move focus out and back as the pointer moves for {duration_ms:d} ms"
+    )
+)
+def out_and_back(shell: Shell, scene: Scene, watch: Watch, duration_ms: int) -> None:
+    steps = wiggle_with(scene.pointer, duration_ms, {200: TAB, 600: SHIFT_TAB})
+    shell.run_steps(steps, timeout_s=duration_ms / 1000 + 5)
+    watch.since = time.monotonic()
+
+
+@when(
+    parsers.parse(
+        "Tab moves focus during a {duration_ms:d} ms pointer move, "
+        "and the pointer then goes to {x:d}, {y:d}"
+    )
+)
+def tab_then_go(shell: Shell, scene: Scene, watch: Watch, duration_ms: int, x: int, y: int) -> None:
+    steps = wiggle_with(scene.pointer, duration_ms, {200: TAB})
+    shell.run_steps([*steps, step(1, "moveTo", x, y)], timeout_s=duration_ms / 1000 + 5)
+    watch.since = time.monotonic()
+
+
+@when(
+    parsers.parse(
+        "Tab moves focus, and the extension is turned off, during a {duration_ms:d} ms pointer move"
+    )
+)
+def tab_then_off(shell: Shell, scene: Scene, watch: Watch, duration_ms: int) -> None:
+    off = [step(1, "disableExtension")]
+    steps = wiggle_with(scene.pointer, duration_ms, {200: TAB, 600: off})
+    shell.run_steps(steps, timeout_s=duration_ms / 1000 + 5)
+    shell.wait_until("scrollZoomTest.state().extension !== 1")
+    watch.since = time.monotonic()
+
+
 @when("the extension is turned off")
 def turn_off(shell: Shell, watch: Watch) -> None:
     shell.call(f"Main.extensionManager.disableExtension('{UUID}'); return true;")
@@ -320,3 +379,25 @@ def centred_on_target(
     middle = (left + box_width / 2, top + box_height / 2)
     off = max(abs(x + width / 2 - middle[0]), abs(y + height / 2 - middle[1]))
     assert off <= tolerance, f"the view's middle is {off:.1f} pixels from the {target}"
+
+
+@then(
+    parsers.parse(
+        "for the next {seconds:d} s the view stays where it is, within {tolerance:d} pixels"
+    )
+)
+def holds_still(shell: Shell, seconds: int, tolerance: int) -> None:
+    x0, y0, _, _ = view(shell)
+    shell.call("return scrollZoomTest.record();")
+    time.sleep(seconds)
+    frames = shell.call("return scrollZoomTest.stopRecording();")
+    assert isinstance(frames, list)
+    rois = [frame["roi"] for frame in frames if isinstance(frame, dict)]
+    rois.append([*view(shell)])
+    moved = 0.0
+    for roi in rois:
+        assert isinstance(roi, list)
+        moved = max(moved, abs(number(roi[0]) - x0), abs(number(roi[1]) - y0))
+    assert moved <= tolerance, (
+        f"the view moved {moved:.1f} pixels over {len(rois) - 1} frames as the text cursor moved"
+    )

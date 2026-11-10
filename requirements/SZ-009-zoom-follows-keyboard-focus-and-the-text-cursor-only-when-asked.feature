@@ -29,7 +29,14 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
 
   GNOME holds a follow back while the pointer has moved in the last second. A pointer moving 2
   pixels back and forth every 50 ms, as a resting hand does, keeps it held, so these scenarios
-  turn following off, or Scroll Zoom on, as such a pointer stops.
+  turn following off, or Scroll Zoom on or off, as such a pointer stops, or move focus on
+  again, or move the view with the pointer, before the follow lands. What lands is worked
+  out from the view and the focus as they are when the pointer rests.
+
+  At 10x the view is 128 by 80 pixels, and the middle button fits in it; at 25x it is 51.2 by
+  32 pixels, and the line's text fits in it. Room around what is brought into view shrinks to
+  what the view has, so all of it shows, and a text cursor moving within the view moves the
+  view no more.
 
   A view's overshoot is how much further it moved, across and down, than showing the focus or
   the text cursor takes. A view brought to either and no further shows it, overshooting by at
@@ -96,6 +103,27 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
     And zoom goes off, Shift+Tab moves focus back to the first button, and zoom comes on again
     And Tab moves keyboard focus to the middle button
     Then after 3 s the view shows the middle button whole, overshooting by at most 60 pixels
+
+  Scenario: Following keyboard focus, turned on at 10x, shows all of a control that fits
+    Given following keyboard focus is turned on in Scroll Zoom's settings
+    And the focus test app is open with its first button focused
+    And zoom is on at 10x with the pointer at 200, 130
+    When Tab moves keyboard focus to the middle button
+    Then after 3 s the view shows the middle button whole, overshooting by at most 60 pixels
+
+  Scenario: Following keyboard focus, turned on, drops a held follow once focus goes back
+    Given following keyboard focus is turned on in Scroll Zoom's settings
+    And the focus test app is open with its first button focused
+    And zoom is on at 3x with the pointer at 200, 130
+    When Tab and then Shift+Tab move focus out and back as the pointer moves for 1500 ms
+    Then for 3 s every frame has the view where the pointer puts it, within 2 pixels
+
+  Scenario: Following keyboard focus, turned on, follows from the view where the pointer rests
+    Given following keyboard focus is turned on in Scroll Zoom's settings
+    And the focus test app is open with its first button focused
+    And zoom is on at 3x with the pointer at 200, 130
+    When Tab moves focus during a 1500 ms pointer move, and the pointer then goes to 760, 400
+    Then for 3 s every frame has the view where the pointer puts it, within 2 pixels
 
   Scenario: Following the text cursor, turned on, brings it into view and no further
     Given GNOME's own settings centre the view on keyboard focus and on the text cursor
@@ -193,3 +221,20 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
     And the focus test app is open, moving the text cursor in its line on its own
     And zoom is on at 3x with the pointer at 200, 130
     Then for 3 s every frame has the view where the pointer puts it, within 2 pixels
+
+  Scenario: Following the text cursor, turned on at 25x, shows it whole and then holds still
+    Given the maximum zoom is set to 32x in Scroll Zoom's settings
+    And following the text cursor is turned on in Scroll Zoom's settings
+    And the focus test app is open, moving the text cursor in its line on its own
+    And zoom is on at 25x with the pointer at 200, 130
+    Then after 3 s the view shows the line's text whole, overshooting by at most 60 pixels
+    And for the next 2 s the view stays where it is, within 2 pixels
+
+  Scenario: Turning the extension off while a follow is held leaves GNOME's settings to decide
+    Given GNOME's own settings follow neither keyboard focus nor the text cursor
+    And following keyboard focus is turned on in Scroll Zoom's settings
+    And the focus test app is open with its first button focused
+    And zoom is on at 3x with the pointer at 200, 130
+    When Tab moves focus, and the extension is turned off, during a 1500 ms pointer move
+    Then for 3 s every frame has the view where the pointer puts it, within 2 pixels
+    And GNOME's own settings still follow neither keyboard focus nor the text cursor
