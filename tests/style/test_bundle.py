@@ -53,13 +53,11 @@ GTK_ONLY = {"Gdk", "Gtk", "Adw"}
 DOT = r"\s*\.\s*"
 OPEN = r"\s*\("
 KEYBINDINGS = {"addKeybinding": "removeKeybinding", "add_keybinding": "remove_keybinding"}
-# The forms undone() reads. Any other call that connects a signal, adds a main loop source, or
-# binds a key fails the check until it reads that form too: the check promises to fail on
-# what it cannot read, not to read every way JavaScript can spell a call.
-SIGNAL_FORMS = {"connect", "connect_after", "connectObject"}
+# undone() reads a call in the forms it knows and marks where it read each one. Any other word
+# that connects a signal, adds a main loop source, or binds a key fails the check until it
+# reads that form too: the check promises to fail on what it cannot read, not to read every
+# way JavaScript can spell a call.
 GLIB_SOURCES = ("timeout_add", "timeout_add_seconds", "idle_add")
-SOURCE_FORMS = {f"{name}{once}" for name in GLIB_SOURCES for once in ("", "_once")}
-KEY_FORMS = {*KEYBINDINGS, "grab_accelerator"}
 
 
 def latest_stable_major(today: date) -> int:
@@ -273,7 +271,7 @@ def undone(text: str) -> list[str]:
         owner = re.sub(r"\s+", "", (arguments(code, m.end() - 1) or [""])[-1])
         if f"{m.group(1)}.disconnectObject({owner})" not in flat:
             found.append(f"{m.group(1)} is never disconnected: {line_of(text, m.start())}")
-    patterns, also_read = sources(code)
+    patterns, also_read, held = sources(code)
     read |= also_read
     for adds, removes in patterns:
         for m in re.finditer(rf"(?:(?P<member>this\.\w+)\s*=\s*)?{adds}", code):
@@ -287,12 +285,13 @@ def undone(text: str) -> list[str]:
             for m in re.finditer(rf"([\w.()]+?){DOT}({adds}){OPEN}([^,()]+?)\s*,", code)
         }
         for m in re.finditer(rf"{DOT}({adds}){OPEN}", code):
+            read.add(m.start(1))
             binding = named.get(m.start(1))
             if binding is None:
                 found.append(f"a keybinding this check cannot read: {line_of(text, m.start())}")
             elif re.sub(r"\s+", "", f"{binding[1]}.{removes}({binding[3]})") not in flat:
                 found.append(f"the keybinding {binding[3]} is never removed")
-    return found + unread(text, code, read)
+    return found + unread(text, code, read, held)
 
 
 def _kept_and_undone(
@@ -321,16 +320,18 @@ def glib_names(text: str) -> list[str]:
     return sorted({"GLib", *names})
 
 
-def sources(code: str) -> tuple[list[tuple[str, tuple[str, ...]]], set[int]]:
+def sources(code: str) -> tuple[list[tuple[str, tuple[str, ...]]], set[int], dict[str, int]]:
     """Each way the file adds a main loop source, with a group for the word that adds it and
-    the ways to remove one kept in a member; and where it reads get_laters() outside an add."""
+    the ways to remove one kept in a member; where it reads get_laters() outside an add; and
+    each name that holds get_laters(), with where it is assigned."""
     found: list[tuple[str, tuple[str, ...]]] = []
     adders = "|".join(GLIB_SOURCES)
     for glib in glib_names(code):
         removes = (f"{glib}.source_remove({{}})", f"{glib}.Source.remove({{}})")
         found.append((rf"\b{glib}{DOT}(?P<name>(?:{adders})(?:_once)?){OPEN}", removes))
     laters = rf"\bglobal{DOT}compositor{DOT}(?P<laters>get_laters){OPEN}\)"
-    held = list(re.finditer(rf"((?:this\.)?\w+)\s*=\s*{laters}", code))
+    # A name holds get_laters() itself only when nothing is reached through the call's result.
+    held = list(re.finditer(rf"((?:this\.)?\w+)\s*=\s*{laters}(?!\s*[.?\[])", code))
     names = [m.group(1) for m in held]
     read = {m.start("laters") for m in held}
     read |= {m.start("laters") for m in re.finditer(rf"{laters}{DOT}remove{OPEN}", code)}
@@ -341,7 +342,7 @@ def sources(code: str) -> tuple[list[tuple[str, tuple[str, ...]]], set[int]]:
     found.append(
         (rf"\b(?P<name>setTimeout|setInterval){OPEN}", ("clearTimeout({})", "clearInterval({})"))
     )
-    return found, read
+    return found, read, {m.group(1): m.start(1) for m in held}
 
 
 def arguments(text: str, opening: int) -> list[str]:
@@ -370,25 +371,32 @@ def arguments(text: str, opening: int) -> list[str]:
 # words that undo them.
 SIGNAL_WORD = re.compile(r"(?<!dis)connect|(?<!un)subscribe|(?<!un)(?:watch|own)_name", re.I)
 SOURCE_WORD = re.compile(r"\w+_add\w*|\w+_source_new\w*|attach|setTimeout|setInterval")
+# Words that bind a key: a lower-case name, so a type such as Meta.KeyBindingFlags is not one.
+KEY_WORD = re.compile(r"(?!remove)[a-z]\w*(?i:keybinding)\w*|grab\w*(?i:accelerator)\w*")
 
 
-def code_only(text: str) -> str:
-    """The text with each comment blanked, keeping every offset and line where it was."""
+def code_only(text: str, strings: bool = True) -> str:
+    """The text with each comment blanked, and each string's contents too unless strings,
+    keeping every offset and line where it was."""
 
     def blank(m: re.Match[str]) -> str:
         found = m.group(0)
-        return re.sub(r"[^\n]", " ", found) if found.startswith("/") else found
+        if found.startswith("/"):
+            return re.sub(r"[^\n]", " ", found)
+        return found if strings else found[0] + re.sub(r"[^\n]", " ", found[1:-1]) + found[-1]
 
     pattern = r"""'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`|//[^\n]*|/\*.*?\*/"""
     return re.sub(pattern, blank, text, flags=re.S)
 
 
-def unread(text: str, code: str, read: set[int]) -> list[str]:
+def unread(text: str, code: str, read: set[int], held: dict[str, int]) -> list[str]:
     """Each place that connects, subscribes, adds a source, or binds a key in a form undone()
     does not read: every such word outside a comment where undone() read none, in a string or
-    before .call included."""
+    before .call included; each use of a name holding get_laters() but its assignment and its
+    .add( and .remove( calls; and each escape in a name, which hides the word."""
     found: list[str] = []
-    # A name that starts with an underscore is one of the extension's own members.
+    # A name that starts with an underscore is a private member, the extension's own or GNOME
+    # Shell's; none that connects, adds a source, or binds a key is named so.
     for m in re.finditer(r"(?<![\w$])[A-Za-z$][\w$]*", code):
         word = m.group(0)
         if m.start() in read:
@@ -397,12 +405,17 @@ def unread(text: str, code: str, read: set[int]) -> list[str]:
             found.append(f"a signal this check cannot read: {line_of(text, m.start())}")
         if SOURCE_WORD.fullmatch(word) or word == "get_laters":
             found.append(f"a main loop source this check cannot read: {line_of(text, m.start())}")
-    for m in re.finditer(rf"\.\s*([A-Za-z]\w*){OPEN}", code):
-        name, lower = m.group(1), m.group(1).lower()
-        bind = "keybinding" in lower and not lower.startswith("remove")
-        bind |= lower.startswith("grab") and "accelerator" in lower
-        if bind and name not in KEY_FORMS:
+        if KEY_WORD.fullmatch(word):
             found.append(f"a key binding this check cannot read: {line_of(text, m.start())}")
+    for name, assigned in held.items():
+        for m in re.finditer(rf"(?<![\w$.]){re.escape(name)}(?![\w$])", code):
+            used = re.match(rf"{DOT}(?:add|remove){OPEN}", code[m.end() :]) is not None
+            if m.start() != assigned and not used:
+                found.append(
+                    f"a main loop source this check cannot read: {line_of(text, m.start())}"
+                )
+    for m in re.finditer(r"\\u", code_only(text, strings=False)):
+        found.append(f"a name this check cannot read: {line_of(text, m.start())}")
     return found
 
 
@@ -527,3 +540,41 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         global.display.ungrab_accelerator(this._key);
     """
     assert undone(clean) == []
+
+
+# Every way a call has been found to slip by, for every kind of call the check reads: what a
+# review finds for one kind is tried on all of them.
+FAMILIES = (
+    ("", "global.stage", "connect"),
+    ("", "global.stage", "connect_after"),
+    ("", "global.stage", "connectObject"),
+    ("", "GLib", "timeout_add"),
+    ("", "GLib", "idle_add_once"),
+    ("", "Main.wm", "addKeybinding"),
+    ("", "global.display", "add_keybinding"),
+    ("", "global.display", "grab_accelerator"),
+    ("", "global", "setTimeout"),
+    ("const laters = global.compositor.get_laters();\n", "laters", "add"),
+    ("this._laters = global.compositor.get_laters();\n", "this._laters", "add"),
+)
+
+
+def forms(receiver: str, name: str) -> list[str]:
+    escaped = f"\\u{ord(name[0]):04x}{name[1:]}"
+    return [
+        f"{receiver}['{name}'](a, b);",
+        f"{receiver}.{name}.call({receiver}, a, b);",
+        f"{receiver}.{name}.apply({receiver}, args);",
+        f"{receiver}?.{name}(a, b);",
+        f"{receiver}.{escaped}(a, b);",
+    ]
+
+
+def test_every_form_found_fails_for_every_kind_of_call() -> None:
+    missed = [
+        before + form
+        for before, receiver, name in FAMILIES
+        for form in forms(receiver, name)
+        if not undone(before + form)
+    ]
+    assert not missed, "\n".join(missed)
