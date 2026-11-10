@@ -45,7 +45,7 @@ DONATIONS = {
     "paypal",
 }
 RELATIVE_IMPORT = re.compile(r"""^import\b[^;]*?\bfrom\s+['"]\./([\w.-]+\.js)['"]""", re.M | re.S)
-GI_IMPORT = re.compile(r"""['"]gi://(\w+)|\bimports\.gi\.(\w+)|\{([^}]*)\}\s*=\s*imports\.gi\b""")
+GI_IMPORT = re.compile(r"""['"]gi://(\w+)|\bimports\.gi\.(\w+)|\{([^{}]*)\}\s*=\s*imports\.gi\b""")
 DEPRECATED = re.compile(r"\bimports\.(?:byteArray|lang|mainloop)\b|\brun_dispose\(")
 SHELL_ONLY = {"Clutter", "Meta", "St", "Shell"}
 GTK_ONLY = {"Gdk", "Gtk", "Adw"}
@@ -60,11 +60,22 @@ SOURCES = (
     (r"\b(?:setTimeout|setInterval)\(", ("clearTimeout({})", "clearInterval({})")),
 )
 KEYBINDINGS = {"addKeybinding": "removeKeybinding", "add_keybinding": "remove_keybinding"}
+# The forms undone() reads. Any other call that connects a signal, adds a main loop source, or
+# binds a key fails the check until it reads that form too, so no form slips by unread.
+SIGNAL_FORMS = {"connect", "connect_after", "connectObject"}
+SOURCE_FORMS = {
+    f"{name}{once}"
+    for name in ("timeout_add", "timeout_add_seconds", "idle_add")
+    for once in ("", "_once")
+}
+KEY_FORMS = {*KEYBINDINGS, "grab_accelerator"}
 
 
 def latest_stable_major(today: date) -> int:
-    """The newest GNOME Shell major released by today: 40 in March 2021, and one more each
-    March and September, as latest_stable_shell_major in the site's analyzer counts them."""
+    """The newest GNOME Shell major counted as released by today: 40 from March 2021, and
+    one more from the first of each March and September, as latest_stable_shell_major in the
+    site's analyzer counts them. Each .0 comes out in the middle of its month, so this counts
+    it about two weeks early."""
     months = (today.year - 2021) * 12 + today.month - 3
     return 40 + max(0, months) // 6
 
@@ -124,6 +135,8 @@ def _donation_problems(donations: object) -> list[str]:
             found.append(f"donations {kind!r} is not one of {sorted(DONATIONS)}")
         if not 1 <= len(values) <= 3 or not all(isinstance(v, str) for v in values):
             found.append(f"donations {kind!r} holds one to three links")
+        elif kind == "custom" and not all(re.fullmatch(r"https?://\S+", str(v)) for v in values):
+            found.append("donations 'custom' holds http or https links, as the site checks")
     return found
 
 
@@ -204,11 +217,14 @@ def test_the_metadata_check_finds_what_the_site_refuses() -> None:
         {"donations": {"bitcoin": "x"}},
         {"donations": {"github": ["a", "b", "c", "d"]}},
         {"donations": {}},
+        {"donations": {"custom": "ftp://example.org/give"}},
+        {"donations": {"custom": "give me money"}},
     ]
     for change in refused:
         assert metadata_problems(good | change, today), change
     assert metadata_problems(good | {"session-modes": ["user", "unlock-dialog"]}, today) == []
     assert metadata_problems(good | {"donations": {"github": "a"}}, today) == []
+    assert metadata_problems(good | {"donations": {"custom": "https://a.org/give"}}, today) == []
 
 
 def test_the_schema_is_under_gnome_shell_extensions() -> None:
@@ -233,6 +249,8 @@ def test_the_library_check_reads_each_way_to_import() -> None:
         "import Gtk from 'gi://Gtk';\nconst Adw = imports.gi.Adw;\nconst {Gdk, St: S} = imports.gi;"
     )
     assert libraries(text) == {"Gtk", "Adw", "Gdk", "St"}
+    lazy = "class A {\n    enable() {\n        const {Gtk} = imports.gi;\n    }\n}"
+    assert libraries(lazy) == {"Gtk"}
 
 
 def undone(text: str) -> list[str]:
@@ -260,6 +278,17 @@ def undone(text: str) -> list[str]:
             member = m.group(1)
             if member is None or not any(r.format(member) in flat for r in removes):
                 found.append(f"a main loop source never removed: {line_of(text, m.start())}")
+    grabs = {
+        m.end(): (m.group(1), m.group(2))
+        for m in re.finditer(r"(this\.\w+)\s*=\s*([\w.()]+?)\s*\.grab_accelerator\(", text)
+    }
+    for m in re.finditer(r"\.grab_accelerator\(", text):
+        if m.end() not in grabs:
+            found.append(f"a key grab whose action is not kept: {line_of(text, m.start())}")
+    for member, receiver in grabs.values():
+        if f"{receiver}.ungrab_accelerator({member})" not in flat:
+            found.append(f"{receiver} never ungrabs {member}")
+    found += unread(text)
     for adds, removes in KEYBINDINGS.items():
         read = {
             m.start(2): m
@@ -271,6 +300,24 @@ def undone(text: str) -> list[str]:
                 found.append(f"a keybinding this check cannot read: {line_of(text, m.start())}")
             elif re.sub(r"\s+", "", f"{named[1]}.{removes}({named[3]})") not in flat:
                 found.append(f"the keybinding {named[3]} is never removed")
+    return found
+
+
+def unread(text: str) -> list[str]:
+    """Each call that connects, adds a source, or binds a key in a form undone() does not read."""
+    found: list[str] = []
+    for m in re.finditer(r"\.([A-Za-z]\w*)\(", text):
+        name, lower = m.group(1), m.group(1).lower()
+        if "connect" in lower and not lower.startswith("disconnect") and name not in SIGNAL_FORMS:
+            found.append(f"a signal this check cannot read: {line_of(text, m.start())}")
+        bind = lower.startswith(("add", "grab")) and (
+            "keybinding" in lower or "accelerator" in lower
+        )
+        if bind and name not in KEY_FORMS:
+            found.append(f"a key binding this check cannot read: {line_of(text, m.start())}")
+    for m in re.finditer(r"\b(\w+_add\w*|\w+_source_new\w*|attach)\(", text):
+        if m.group(1) not in SOURCE_FORMS:
+            found.append(f"a main loop source this check cannot read: {line_of(text, m.start())}")
     return found
 
 
@@ -305,6 +352,15 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "Main.wm.addKeybinding(KEY, s, 0, 0, f);": "the keybinding KEY is never removed",
         "global.display.add_keybinding('k', s, 0, f);": "the keybinding 'k' is never removed",
         "Main.wm.addKeybinding(this._name(), s, 0, 0, f);": "a keybinding this check cannot",
+        "this._a.connect_object('x', f, this);": "a signal this check cannot read",
+        "this._id = GObject.signal_connect(global.stage, 'x', f);": "a signal this check cannot",
+        "this._id = GObject.signal_connect_after(this._a, 'x', f);": "a signal this check cannot",
+        "this._s = GLib.timeout_source_new(100);": "a main loop source this check cannot read",
+        "this._s.attach(null);": "a main loop source this check cannot read",
+        "this._w = GLib.child_watch_add(0, pid, f);": "a main loop source this check cannot read",
+        "global.display.grab_accelerator('<Super>z', 0);": "a key grab whose action is not kept",
+        "this._k = global.display.grab_accelerator('<Super>z', 0);": "never ungrabs this._k",
+        "global.display.grab_accelerators(keys);": "a key binding this check cannot read",
     }
     for code, problem in left.items():
         assert any(problem in found for found in undone(code)), (code, undone(code))
@@ -319,6 +375,9 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         Main.wm.addKeybinding('k', s, 0, 0, f);
         Main.wm.addKeybinding(KEY, s, 0, 0, f);
         global.display.add_keybinding('d', s, 0, f);
+        this._key = global.display.grab_accelerator('<Super>z', 0);
+        this._connectSignals();
+        this._attach();
         this._a.disconnect(this._id);
         this._a.disconnect(this._after);
         this._a.disconnectObject(this);
@@ -329,5 +388,6 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         Main.wm.removeKeybinding('k');
         Main.wm.removeKeybinding(KEY);
         global.display.remove_keybinding('d');
+        global.display.ungrab_accelerator(this._key);
     """
     assert undone(clean) == []

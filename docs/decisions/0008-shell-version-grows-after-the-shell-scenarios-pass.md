@@ -29,6 +29,8 @@ them GNOME's own zoom.
   machine whose `gnome-shell --version` reports it, and fix what fails there. The branch
   merges once the scenarios pass on the stable `.0`, and is released the same day, so the
   review on extensions.gnome.org starts weeks before most distributions ship that GNOME.
+  Before the first of the release's month, the date check in `tests/style/test_bundle.py`
+  fails on that branch, as the site's own analyzer would; the `@shell` scenarios still run.
 - Never list a development release or a future one. extensions.gnome.org forbids future
   versions, and a pass on a release candidate is not a pass on the release.
 - A major stays listed while each change can still be tested on it: keep a machine, virtual
@@ -38,10 +40,10 @@ them GNOME's own zoom.
   each GNOME the newest version that lists it.
 - A change to `shell-version` is a release: bump `version-name`, tag it, and the `release`
   workflow publishes it.
-- The same change updates each place that names the GNOME it needs: "What you need" in the
-  README, the note and the structured data on the project page, the release notes in the
-  `release` workflow, and the lines on `make test-shell` in `AGENTS.md` and
-  `CONTRIBUTING.md`.
+- The same change updates each place outside `docs/decisions/` that names a GNOME major:
+  `tests/style/test_gnome_versions.py` fails until each names one `metadata.json` lists. A
+  distribution named for that GNOME, as Ubuntu 26.04 is in the README's "What you need",
+  changes with it.
 
 ### Consequences
 
@@ -55,7 +57,9 @@ them GNOME's own zoom.
 `make test-shell` runs only on a GNOME Shell whose major `metadata.json` lists
 (`tests/shell.py`), so a new major starts by listing it on a branch.
 `tests/style/test_bundle.py` refuses an entry that is not a whole major, or that the date
-says is not released yet, counted as the site's own analyzer counts it. The rules lens
+says is not released yet, counted as the site's own analyzer counts it: from the first of
+March or September. `tests/style/test_gnome_versions.py` refuses a page or tool that names a
+major `metadata.json` does not list. The rules lens
 checks that a change to `shell-version` says in its description which GNOME Shell its
 `make test-shell` passed on.
 
