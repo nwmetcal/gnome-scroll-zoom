@@ -433,11 +433,11 @@ vec4 sz_filter(vec2 uv) {
     // spans sz_mag screen pixels.
     float half_width = clamp(0.5 * sz_edge / sz_mag, 0.01, 0.75);
     ${generateShapes()}
-    // Where the coverage between the 4 nearest pixels' centres is more than
-    // half, it is ink: that half-ink outline lies on a straight edge and inside
-    // thin strokes and outer corners, and fills inside corners only a little,
-    // where strokes join, so no joint the shapes leave a hairline gap in comes
-    // apart.
+    // Where the coverage between the 4 nearest pixels' centres is over 0.55,
+    // a little over half, it is ink: that outline lies on a straight edge and
+    // inside thin strokes and outer corners, and fills inside corners only a
+    // little, where strokes join, so a joint the shapes leave a hairline gap in
+    // stays joined.
     float between = mix(mix(${near[0]}, ${near[1]}, f.x), mix(${near[2]}, ${near[3]}, f.x), f.y);
     d = max(d, between - 0.55);
     // Bolder or thinner moves the edges of strokes; a faint pixel of
