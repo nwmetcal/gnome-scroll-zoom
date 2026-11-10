@@ -192,6 +192,11 @@
             // Its zoom region skips a focus change or a text cursor move to where it saw the
             // last one, so clear those as a fresh session starts.
             Object.assign(region(), {_xFocus: 0, _yFocus: 0, _xCaret: 0, _yCaret: 0});
+            // GNOME's own following stays on for a second after the pointer last moved, and
+            // with the pointer forgotten it would centre the view on nothing as the level
+            // changes, leaving the view's middle not a number. Putting the view's middle back at
+            // the screen's middle ends that following, so each scenario starts from one place.
+            region().scrollContentsTo(global.screen_width / 2, global.screen_height / 2);
             magnifier.set_double('mag-factor', 2.0);
             Main.overview.hide();
             for (const key of Object.keys(KEYS))

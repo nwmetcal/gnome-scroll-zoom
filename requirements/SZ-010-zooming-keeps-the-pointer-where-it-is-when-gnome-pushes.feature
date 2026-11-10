@@ -29,6 +29,7 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
   own magnifier puts it for the pointer's place on the screen. Under no following, the view's
   middle stays where GNOME had it before zoom came on, as far as the view at each zoom can
   stay within the screen, since GNOME keeps where it put the view's middle at the zoom before.
+  Each scenario starts with GNOME's view at the screen's middle and its own following at rest.
 
   Scenario: The wheel turning zoom on keeps the pointer where it is
     Given GNOME's own following pushes the view at its edges
@@ -85,6 +86,8 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
     And zoom is off
     And the pointer is at 1100, 650
     When Super is held and the wheel turns 6 notches up
+    Then every frame had the view where GNOME's moving with the contents puts it, within 2 pixels
+    When Super is held and the wheel turns 3 notches down
     Then every frame had the view where GNOME's moving with the contents puts it, within 2 pixels
 
   Scenario: Under no following of GNOME's, zooming keeps the view's middle where it is
