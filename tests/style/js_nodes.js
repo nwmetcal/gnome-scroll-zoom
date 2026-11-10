@@ -1,89 +1,199 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Where gjs's own parser finds code, strings, template text, and regex literals, so the
-// bundle check can tell when its own scanner misread one: a misread can hide code.
+// What gjs's own parser reads in each source, for the undo check in test_bundle.py. Reading
+// the syntax tree, not the text, a comment, a string, or a regex can never pass for code,
+// and a name the parser can resolve, such as obj['con' + 'nect'], is read as that name.
 //
 //   gjs -m tests/style/js_nodes.js SOURCES.json
 //
 // SOURCES.json holds a list of JavaScript sources. This prints a list with one entry for
-// each: a list of [kind, line, column] for every leaf the parser places, or the parser's
-// error. Lines and columns count from 1, and a column counts characters, as Python does.
+// each, or the parser's error:
+//   calls: every call, as [line, name, receiver, form, kept, args, use]. form is dot for
+//     receiver.name(...), bare for name(...), and optional or computed otherwise. kept is
+//     what the call's result is assigned to, if anything. use says how a
+//     global.compositor.get_laters() call is used: hold, add, remove, or null.
+//   names: every place a name stands, as [line, name, site]: site is the index of the call
+//     it names, declared for the name a const, let, or var declares, or other.
+//   holds: the names that hold global.compositor.get_laters() in a statement of their own.
+//   held: each place a held name stands, as [line, name, role]: role is hold, assigned,
+//     laters for the receiver of its own .add( or .remove(, or other.
+//   glib: the names GLib goes by in the file.
 
 import GLib from 'gi://GLib';
 
-const LEAVES = new Set(['Identifier', 'ThisExpression', 'Super', 'Literal']);
-// gjs 1.80 counts columns from 0, and gjs 1.88 from 1: take this gjs's own first column.
-const ORIGIN = Reflect.parse('x;').body[0].loc.start.column;
-// And gjs counts a column in UTF-16 code units, characters, or UTF-8 bytes, by version: a
-// character outside the Basic Multilingual Plane, before x, tells which.
-const WIDE = Reflect.parse("'\u{1d465}'; x;").body[1].expression.loc.start.column - ORIGIN;
-const UNIT = {6: 'utf16', 5: 'characters', 8: 'utf8'}[WIDE];
-if (!UNIT)
-    throw new Error(`this gjs counts columns in a unit not known here: x at ${WIDE}`);
+const LATERS = 'global.compositor.get_laters()';
 
-let lines = [];
-
-// A column counted from 0 in this gjs's unit, as characters counted from 0.
-function characters(line, column) {
-    const text = lines[line - 1];
-    if (text === undefined)
-        throw new Error(`the parser placed a node on line ${line}, past the source's end`);
-    if (UNIT === 'characters')
-        return column;
-    if (UNIT === 'utf16')
-        return [...text.slice(0, column)].length;
-    let bytes = 0, count = 0;
-    for (const char of text) {
-        if (bytes >= column)
-            break;
-        bytes += new TextEncoder().encode(char).length;
-        count++;
+// The text of a receiver, a kept name, or an argument that the check can compare, or null:
+// a name, this, a dotted path through them, a call of one with no arguments, or a string.
+function path(node) {
+    switch (node?.type) {
+    case 'Identifier':
+        return node.name;
+    case 'ThisExpression':
+        return 'this';
+    case 'Literal':
+        return typeof node.value === 'string' ? `'${node.value}'` : null;
+    case 'MemberExpression': {
+        const object = path(node.object);
+        return node.computed || object === null ? null : `${object}.${node.property.name}`;
     }
-    return count;
-}
-
-function place(kind, loc) {
-    return [kind, loc.start.line, characters(loc.start.line, loc.start.column - ORIGIN) + 1];
-}
-
-function kindOf(node) {
-    if (node.type !== 'Literal')
-        return 'code';
-    if (node.value instanceof RegExp)
-        return 'regex';
-    return typeof node.value === 'string' ? 'string' : 'code';
-}
-
-function walk(node, found) {
-    if (!node || typeof node.type !== 'string')
-        return;
-    if (node.type === 'TemplateLiteral') {
-        if (node.loc)
-            found.push(place('template', node.loc));
-        for (const element of node.elements) {
-            if (element.type === 'Literal' && typeof element.value === 'string')
-                found.push(place('template', element.loc));
-            else
-                walk(element, found);
-        }
-        return;
+    case 'CallExpression': {
+        // A call with no arguments, such as global.backend.get_cursor_tracker().
+        const callee = path(node.callee);
+        return callee !== null && node.arguments.length === 0 ? `${callee}()` : null;
     }
-    if (node.loc && LEAVES.has(node.type))
-        found.push(place(kindOf(node), node.loc));
+    default:
+        return null;
+    }
+}
+
+function lineOf(node, parent) {
+    return node.loc?.start.line ?? parent?.loc?.start.line ?? 0;
+}
+
+function children(node) {
+    const found = [];
     for (const [key, value] of Object.entries(node)) {
-        if (key === 'loc')
+        if (key === 'loc' || key === 'called' || key === 'call')
             continue;
-        if (Array.isArray(value))
-            value.forEach(child => walk(child, found));
-        else if (value && typeof value === 'object')
-            walk(value, found);
+        for (const child of Array.isArray(value) ? value : [value]) {
+            if (child && typeof child === 'object' && typeof child.type === 'string')
+                found.push([key, child]);
+        }
     }
+    return found;
+}
+
+// A statement of its own that holds the laters, as [name, the call, the name's node]:
+// const laters = <LATERS>, or this._laters = <LATERS>.
+function holdOf(node) {
+    if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' &&
+        node.init?.type === 'CallExpression' && path(node.init) === LATERS)
+        return [node.id.name, node.init, node.id];
+    const assignment = node.type === 'ExpressionStatement' ? node.expression : null;
+    if (assignment?.type === 'AssignmentExpression' && assignment.operator === '=' &&
+        assignment.right.type === 'CallExpression' && path(assignment.right) === LATERS) {
+        const target = assignment.left;
+        if (target.type === 'Identifier' || (target.type === 'MemberExpression' &&
+            !target.computed && target.object.type === 'ThisExpression'))
+            return [path(target), assignment.right, target];
+    }
+    return null;
+}
+
+function isMember(node) {
+    return node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression';
+}
+
+// The receiver of its own .add( or .remove(: a member of that name, called.
+function addsOrRemoves(parent, key) {
+    return parent?.type === 'MemberExpression' && key === 'object' && !parent.computed &&
+        ['add', 'remove'].includes(parent.property.name) && parent.called === true;
+}
+
+function read(ast) {
+    const calls = [], names = [], held = [];
+    const holds = new Map(), glib = new Set(['GLib']);
+
+    // First GLib's names, and the names that hold the laters.
+    (function scan(node) {
+        if (node.type === 'ImportDeclaration' && node.moduleRequest?.source.value === 'gi://GLib') {
+            for (const specifier of node.specifiers)
+                glib.add(specifier.name.name);
+        }
+        if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' &&
+            path(node.init) === 'imports.gi.GLib')
+            glib.add(node.id.name);
+        const hold = holdOf(node);
+        if (hold)
+            holds.set(hold[1], hold);
+        for (const [, child] of children(node))
+            scan(child);
+    })(ast);
+    const heldNames = new Set([...holds.values()].map(([name]) => name));
+    const holdTargets = new Set([...holds.values()].map(([, , target]) => target));
+
+    function call(node, parent, key) {
+        const callee = node.callee;
+        let form = 'other', name = null, receiver = null;
+        if (node.type === 'OptionalCallExpression' || callee.type === 'OptionalMemberExpression') {
+            form = 'optional';
+            name = callee.computed ? null : callee.property?.name ?? callee.name ?? null;
+        } else if (callee.type === 'MemberExpression' && !callee.computed) {
+            form = 'dot';
+            name = callee.property.name;
+            receiver = path(callee.object);
+        } else if (callee.type === 'MemberExpression') {
+            form = 'computed';
+        } else if (callee.type === 'Identifier') {
+            form = 'bare';
+            name = callee.name;
+            receiver = '';
+        }
+        let kept = null;
+        if (parent?.type === 'AssignmentExpression' && key === 'right' && parent.operator === '=')
+            kept = path(parent.left);
+        else if (parent?.type === 'VariableDeclarator' && key === 'init')
+            kept = path(parent.id);
+        let use = null;
+        if (path(node) === LATERS) {
+            if (holds.has(node))
+                use = 'hold';
+            else if (addsOrRemoves(parent, key))
+                use = parent.property.name;
+        }
+        calls.push([lineOf(node, parent), name, receiver, form, kept,
+            node.arguments.map(argument => path(argument)), use]);
+        return calls.length - 1;
+    }
+
+    function role(node, parent, key) {
+        if (holdTargets.has(node))
+            return 'hold';
+        if (parent?.type === 'AssignmentExpression' && key === 'left')
+            return 'assigned';
+        return addsOrRemoves(parent, key) ? 'laters' : 'other';
+    }
+
+    (function walk(node, parent, key) {
+        if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
+            // Marked before the callee is walked, so it knows it is called, and by which call.
+            node.callee.called = true;
+            node.callee.call = call(node, parent, key);
+        }
+        const line = lineOf(node, parent);
+        const here = node.type === 'Identifier' || node.type === 'MemberExpression'
+            ? path(node) : null;
+        if (here !== null && heldNames.has(here))
+            held.push([line, here, role(node, parent, key)]);
+        const site = node.called === true ? node.call : 'other';
+        if (node.type === 'Identifier') {
+            const declared = parent?.type === 'VariableDeclarator' && key === 'id';
+            names.push([line, node.name, declared ? 'declared' : site]);
+        }
+        if (isMember(node) && !node.computed)
+            names.push([line, node.property.name, site]);
+        if (isMember(node) && node.computed && typeof node.property.value === 'string')
+            names.push([line, node.property.value, 'other']);
+        if (node.type === 'Property' && node.key.type === 'Identifier' && !node.shorthand)
+            names.push([line, node.key.name, 'other']);
+        if (node.type === 'ClassMethod')
+            names.push([line, node.name.name, 'other']);
+        for (const [childKey, child] of children(node)) {
+            // A member's property name, a property's key, and a method's name are read above.
+            const named = (isMember(node) && !node.computed && childKey === 'property') ||
+                (node.type === 'Property' && !node.shorthand && childKey === 'key') ||
+                (node.type === 'ClassMethod' && childKey === 'name');
+            if (!named)
+                walk(child, node, childKey);
+        }
+    })(ast, null, null);
+
+    return {calls, names, holds: [...heldNames], held, glib: [...glib]};
 }
 
 const [, contents] = GLib.file_get_contents(ARGV[0]);
 const sources = JSON.parse(new TextDecoder().decode(contents));
 print(JSON.stringify(sources.map(source => {
-    // The line breaks JavaScript counts, so a line here is the parser's line.
-    lines = source.split(/\r\n|[\n\r\u2028\u2029]/);
     let ast;
     try {
         ast = Reflect.parse(source, {target: 'module'});
@@ -92,7 +202,5 @@ print(JSON.stringify(sources.map(source => {
             throw error;
         return error.message;
     }
-    const found = [];
-    walk(ast, found);
-    return found;
+    return read(ast);
 })));

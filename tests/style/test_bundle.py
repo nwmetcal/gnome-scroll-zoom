@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import cast
@@ -50,16 +51,26 @@ GI_IMPORT = re.compile(r"""['"]gi://(\w+)|\bimports\.gi\.(\w+)|\{([^{}]*)\}\s*=\
 DEPRECATED = re.compile(r"\bimports\.(?:byteArray|lang|mainloop)\b|\brun_dispose\(")
 SHELL_ONLY = {"Clutter", "Meta", "St", "Shell"}
 GTK_ONLY = {"Gdk", "Gtk", "Adw"}
-# JavaScript allows space around a member's dot and before a call's parenthesis.
-DOT = r"\s*\.\s*"
-OPEN = r"\s*\("
 KEYBINDINGS = {"addKeybinding": "removeKeybinding", "add_keybinding": "remove_keybinding"}
-# undone() reads a call as plain code writes it, and marks where it read each one. A word that
-# connects a signal, adds a main loop source, or binds a key anywhere else fails the check, as
-# do the other forms it knows: a string name, .call, .apply, ?., and a held laters name. A
-# name spelled to hide it from a text check, such as an escape in a string or a joined string,
-# is left to review. gjs's own parser checks the scanner each part of this relies on.
-GLIB_SOURCES = ("timeout_add", "timeout_add_seconds", "idle_add")
+TIMERS = {"setTimeout": "clearTimeout", "setInterval": "clearInterval"}
+GLIB_SOURCES = {
+    f"{name}{once}"
+    for name in ("timeout_add", "timeout_add_seconds", "idle_add")
+    for once in ("", "_once")
+}
+LATERS = "global.compositor.get_laters()"
+# The undo check reads each call as gjs's own parser reads it (tests/style/js_nodes.js). A name
+# that connects a signal, adds a main loop source, or binds a key, standing anywhere but in a
+# call read here, fails it: through .call, .apply, ?., or a computed name, or taken off its
+# object. A name the parser resolves, such as obj['con' + 'nect'], is read as that name.
+# Words that connect a signal, subscribe on D-Bus, or watch or own a bus name, but not the
+# words that undo them.
+SIGNAL_WORD = re.compile(r"(?<!dis)connect|(?<!un)subscribe|(?<!un)(?:watch|own)_name", re.I)
+SOURCE_WORD = re.compile(r"\w+_add\w*|\w+_source_new\w*|attach|setTimeout|setInterval")
+# Words that bind a key: a lower-case name, so a type such as Meta.KeyBindingFlags is not one.
+KEY_WORD = re.compile(r"(?!remove|get_)(?=[a-z])\w*(?i:keybinding)\w*|grab\w*(?i:accelerator)\w*")
+
+type Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
 def latest_stable_major(today: date) -> int:
@@ -245,383 +256,154 @@ def test_the_library_check_reads_each_way_to_import() -> None:
     assert libraries(lazy) == {"Gtk"}
 
 
-def undone(text: str) -> list[str]:
-    """What the shell side connects, adds, or binds without keeping what disable() needs to
-    undo it, or without undoing it anywhere in the same file, and each place that does so in
-    a form it does not read. It reads the file, not which method runs when, so an undo
-    anywhere in the file's code counts, though not one written in a string."""
-    code = code_only(text)
-    # An undo is looked for in code: a string that holds a call is text, not an undo.
-    flat = re.sub(r"\s+", "", without_calls_in_strings(text, code))
-    found: list[str] = []
-    read: set[int] = set()
-    for call, undo, what, never in (
-        (
-            rf"{DOT}(connect(?:_after)?){OPEN}",
-            "disconnect",
-            "a signal whose id",
-            "is never disconnected from",
-        ),
-        (
-            rf"{DOT}(grab_accelerator){OPEN}",
-            "ungrab_accelerator",
-            "a key grab whose action",
-            "never ungrabs",
-        ),
-    ):
-        found += _kept_and_undone(text, code, flat, read, call, undo, what, never)
-    for m in re.finditer(rf"([\w.()]+?){DOT}(connectObject){OPEN}", code):
-        read.add(m.start(2))
-        owner = re.sub(r"\s+", "", (arguments(code, m.end() - 1) or [""])[-1])
-        if f"{m.group(1)}.disconnectObject({owner})" not in flat:
-            found.append(f"{m.group(1)} is never disconnected: {line_of(text, m.start())}")
-    patterns, also_read, held = sources(code)
-    read |= also_read
-    for adds, removes in patterns:
-        for m in re.finditer(rf"(?:(?P<member>this\.\w+)\s*=\s*)?{adds}", code):
-            read |= {m.start(group) for group in ("name", "laters") if m.groupdict().get(group)}
-            member = m.group("member")
-            if member is None or not any(r.format(member) in flat for r in removes):
-                found.append(f"a main loop source never removed: {line_of(text, m.start())}")
-    for adds, removes in KEYBINDINGS.items():
-        named = {
-            m.start(2): m
-            for m in re.finditer(rf"([\w.()]+?){DOT}({adds}){OPEN}([^,()]+?)\s*,", code)
-        }
-        for m in re.finditer(rf"{DOT}({adds}){OPEN}", code):
-            read.add(m.start(1))
-            binding = named.get(m.start(1))
-            if binding is None:
-                found.append(f"a keybinding this check cannot read: {line_of(text, m.start())}")
-            elif re.sub(r"\s+", "", f"{binding[1]}.{removes}({binding[3]})") not in flat:
-                found.append(f"the keybinding {binding[3]} is never removed")
-    return found + unread(text, code, read, held)
+@dataclass(frozen=True)
+class Call:
+    """A call as gjs's parser reads it; see tests/style/js_nodes.js."""
+
+    line: int
+    name: str | None
+    receiver: str | None
+    form: str
+    kept: str | None
+    args: tuple[str | None, ...]
+    use: str | None
 
 
-def _kept_and_undone(
-    text: str, code: str, flat: str, read: set[int], call: str, undo: str, what: str, never: str
-) -> list[str]:
-    """Each call whose id is not kept in a member, or whose kept id is never undone."""
-    found: list[str] = []
-    kept = {
-        m.end(): (m.group(1), m.group(2))
-        for m in re.finditer(rf"(this\.\w+)\s*=\s*([\w.()]+?){call}", code)
-    }
-    for m in re.finditer(call, code):
-        read.add(m.start(1))
-        if m.end() not in kept:
-            found.append(f"{what} is not kept: {line_of(text, m.start())}")
-    for member, receiver in kept.values():
-        if f"{receiver}.{undo}({member})" not in flat:
-            found.append(f"{receiver} {never} {member}")
-    return found
+@dataclass(frozen=True)
+class Read:
+    """What gjs's parser reads in one source: its calls, the places names stand, and the
+    names that hold global.compositor.get_laters()."""
+
+    calls: tuple[Call, ...]
+    names: tuple[tuple[int, str, int | str], ...]
+    holds: frozenset[str]
+    held: tuple[tuple[int, str, str], ...]
+    glib: frozenset[str]
 
 
-def glib_names(text: str) -> list[str]:
-    """GLib, and each other name the file imports it under."""
-    names = re.findall(r"""import\s+(\w+)\s+from\s+['"]gi://GLib['"]""", text)
-    names += re.findall(r"(\w+)\s*=\s*imports\.gi\.GLib\b", text)
-    return sorted({"GLib", *names})
-
-
-def sources(
-    code: str,
-) -> tuple[list[tuple[str, tuple[str, ...]]], set[int], dict[str, set[int]]]:
-    """Each way the file adds a main loop source, with a group for the word that adds it and
-    the ways to remove one kept in a member; where it reads get_laters() outside an add; and
-    each name that holds get_laters(), with where it is assigned."""
-    found: list[tuple[str, tuple[str, ...]]] = []
-    adders = "|".join(GLIB_SOURCES)
-    for glib in glib_names(code):
-        removes = (f"{glib}.source_remove({{}})", f"{glib}.Source.remove({{}})")
-        found.append((rf"\b{glib}{DOT}(?P<name>(?:{adders})(?:_once)?){OPEN}", removes))
-    laters = rf"\bglobal{DOT}compositor{DOT}(?P<laters>get_laters){OPEN}\)"
-    # A name holds get_laters() itself only when nothing is reached through the call's result.
-    # A name held on another object, such as this._state.laters, is not read.
-    held = [
-        m
-        for m in re.finditer(
-            rf"(?<![\w$.])((?:this\.)?\w+)\s*=\s*{laters}"
-            # Its statement ends: a ;, the end, or a line the next line does not go on from.
-            r"(?=[ \t]*;|\s*$|[ \t]*\n(?!\s*[.?\[(`]))",
-            code,
+def _read(found: Json) -> Read | str:
+    if isinstance(found, str):
+        return found
+    facts = cast("dict[str, list[list[Json]]]", found)
+    calls = tuple(
+        Call(
+            cast(int, c[0]),
+            cast("str | None", c[1]),
+            cast("str | None", c[2]),
+            cast(str, c[3]),
+            cast("str | None", c[4]),
+            tuple(cast("list[str | None]", c[5])),
+            cast("str | None", c[6]),
         )
-        # Not after a dot, nor a second name in a chained assignment.
-        if not re.search(r"(?:\.|(?<![=!<>])=)\s*$", code[: m.start(1)])
-    ]
-    names = [m.group(1) for m in held]
-    read = {m.start("laters") for m in held}
-    read |= {m.start("laters") for m in re.finditer(rf"{laters}{DOT}remove{OPEN}", code)}
-    removes = tuple(f"{later}.remove({{}})" for later in ["global.compositor.get_laters()", *names])
-    found.append((rf"{laters}{DOT}(?P<name>add){OPEN}", removes))
-    for name in names:
-        found.append((rf"(?<![\w.]){re.escape(name)}{DOT}(?P<name>add){OPEN}", removes))
-    found.append(
-        (rf"\b(?P<name>setTimeout|setInterval){OPEN}", ("clearTimeout({})", "clearInterval({})"))
+        for c in facts["calls"]
     )
-    assigned: dict[str, set[int]] = {}
-    for m in held:
-        assigned.setdefault(m.group(1), set()).add(m.start(1))
-    return found, read, assigned
+    names = tuple(
+        (cast(int, n[0]), cast(str, n[1]), cast("int | str", n[2])) for n in facts["names"]
+    )
+    held = tuple((cast(int, h[0]), cast(str, h[1]), cast(str, h[2])) for h in facts["held"])
+    holds = frozenset(cast("list[str]", facts["holds"]))
+    return Read(calls, names, holds, held, frozenset(cast("list[str]", facts["glib"])))
 
 
-def arguments(text: str, opening: int) -> list[str]:
-    """The top-level arguments of the call whose parenthesis is at opening."""
-    depth, quote, start = 0, "", opening + 1
-    args: list[str] = []
-    for index in range(opening, len(text)):
-        char = text[index]
-        if quote:
-            quote = "" if char == quote and text[index - 1] != "\\" else quote
-        elif char in "'\"`":
-            quote = char
-        elif char in "([{":
-            depth += 1
-        elif char in ")]}":
-            depth -= 1
-            if depth == 0:
-                return [*args, text[start:index].strip()]
-        elif char == "," and depth == 1:
-            args.append(text[start:index].strip())
-            start = index + 1
-    return args
-
-
-# Words that connect a signal, subscribe on D-Bus, or watch or own a bus name, but not the
-# words that undo them.
-SIGNAL_WORD = re.compile(r"(?<!dis)connect|(?<!un)subscribe|(?<!un)(?:watch|own)_name", re.I)
-SOURCE_WORD = re.compile(r"\w+_add\w*|\w+_source_new\w*|attach|setTimeout|setInterval")
-# Words that bind a key: a lower-case name, so a type such as Meta.KeyBindingFlags is not one.
-KEY_WORD = re.compile(r"(?!remove|get_)(?=[a-z])\w*(?i:keybinding)\w*|grab\w*(?i:accelerator)\w*")
-
-
-# Words after which a / starts a regex literal rather than a division.
-REGEX_AFTER_WORDS = {
-    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case",
-    "do", "else", "yield", "await",
-}  # fmt: skip
-
-
-def literals(text: str) -> list[tuple[str, int, int]]:
-    """Each comment, string, template text, and regex literal in a JavaScript file, as its
-    kind and the span of its whole text. A template's ${...} parts are code, and read as code.
-    A string, regex, or comment that does not close where JavaScript needs it to is reported
-    as "unclosed": the scanner read something code cannot be, so it may hide code."""
-    spans: list[tuple[str, int, int]] = []
-    templates: list[int] = []
-    depth, last, word, index, dotted = 0, "", "", 0, False
-    # Where the last literal ended, so a ++ or -- counts only when it is code.
-    code_from = 0
-    while index < len(text):
-        char = text[index]
-        if text.startswith("//", index):
-            end = text.find("\n", index)
-            end = len(text) if end < 0 else end
-            spans.append(("comment", index, end))
-            index = end
-            continue
-        if text.startswith("/*", index):
-            end = text.find("*/", index + 2)
-            closed = end >= 0
-            end = end + 2 if closed else len(text)
-            spans.append(("comment" if closed else "unclosed", index, end))
-            index = code_from = end
-            continue
-        if char in "'\"":
-            end = _closing(text, index + 1, char)
-            closed = text[end - 1] == char and end - 1 > index
-            spans.append(("string" if closed else "unclosed", index, end))
-            index, last, word, code_from = end, "a", "", end
-            continue
-        if char == "`" or (char == "}" and templates and templates[-1] == depth):
-            if char == "}":
-                templates.pop()
-            end = index + 1
-            while end < len(text) and text[end] != "`" and not text.startswith("${", end):
-                end += 2 if text[end] == "\\" else 1
-            if text.startswith("${", end):
-                spans.append(("template", index, end + 2))
-                templates.append(depth)
-                index, last, word, code_from = end + 2, "(", "", end + 2
-            else:
-                spans.append(("template", index, min(end + 1, len(text))))
-                index, last, word, code_from = end + 1, "a", "", end + 1
-            continue
-        # A / after n++ or n-- is a division: the two characters stand together in code.
-        previous = len(text[:index].rstrip()) - 1
-        postfix = previous - 1 >= code_from and text[previous - 1 : previous + 1] in ("++", "--")
-        keyword = word in REGEX_AFTER_WORDS and not dotted
-        if char == "/" and not postfix and (not last or last in "(,=:[!&|?{};+-*%<>~^" or keyword):
-            end, closed = _regex_end(text, index + 1)
-            spans.append(("regex" if closed else "unclosed", index, end))
-            index, last, word, code_from = end, "a", "", end
-            continue
-        depth += {"{": 1, "}": -1}.get(char, 0)
-        if not char.isspace():
-            named = char.isalnum() or char in "_$"
-            # A word just after a dot is a property's name, such as this._size.in.
-            dotted = dotted if word and named else last == "."
-            word = word + char if named else ""
-            last = char
-        index += 1
-    return spans
-
-
-def _closing(text: str, index: int, quote: str) -> int:
-    while index < len(text) and text[index] not in (quote, "\n"):
-        index += 2 if text[index] == "\\" else 1
-    return min(index + 1, len(text))
-
-
-def _regex_end(text: str, index: int) -> tuple[int, bool]:
-    """Where the regex literal whose text starts at index ends, and whether it closed."""
-    in_class, closed = False, False
-    while index < len(text) and text[index] != "\n":
-        char = text[index]
-        if char == "\\":
-            index += 2
-            continue
-        if char == "/" and not in_class:
-            index, closed = index + 1, True
-            break
-        in_class = (in_class or char == "[") and char != "]"
-        index += 1
-    while index < len(text) and text[index].isalpha():
-        index += 1
-    return index, closed
-
-
-def without_calls_in_strings(text: str, code: str) -> str:
-    """The code with each string or template text that holds a parenthesis blanked."""
-    chars = list(code)
-    for kind, start, end in literals(text):
-        if kind in ("string", "template") and "(" in text[start:end]:
-            for index in range(start, end):
-                if chars[index] != "\n":
-                    chars[index] = " "
-    return "".join(chars)
-
-
-def code_only(text: str, strings: bool = True) -> str:
-    """The text with each comment and regex literal blanked, and each string's and template
-    text's contents too unless strings, keeping every offset and line where it was."""
-    chars = list(text)
-    for kind, start, end in literals(text):
-        if kind in ("comment", "regex") or not strings:
-            for index in range(start, end):
-                if chars[index] != "\n":
-                    chars[index] = " "
-    return "".join(chars)
-
-
-def unread(text: str, code: str, read: set[int], held: dict[str, set[int]]) -> list[str]:
-    """Each place that connects, subscribes, adds a source, or binds a key in a form undone()
-    does not read: every such word in code where undone() read none, before .call included,
-    and each string that holds such a name alone, as obj['name'] does; each use of a name
-    holding get_laters() but its assignment and its .add( and .remove( calls; and each escape
-    in a name outside a string, which hides the word."""
-    found: list[str] = []
-    bare = code_only(text, strings=False)
-    words = [(m.start(), m.group(0)) for m in re.finditer(r"(?<![\w$])[A-Za-z$][\w$]*", bare)]
-    # A string or a template's text names a call when it holds only that name, as obj['name'].
-    for kind, start, end in literals(text):
-        inner = text[start + 1 : end - (2 if text.endswith("${", 0, end) else 1)]
-        if kind in ("string", "template") and re.fullmatch(r"[A-Za-z$][\w$]*", inner):
-            words.append((start + 1, inner))
-    # A name that starts with an underscore is a private member: the extension's own, whose
-    # code is read where it is written, or GNOME Shell's, such as the magnifier's
-    # _connectSignals, which undoes itself and is left to review. The word pattern skips them.
-    for offset, word in words:
-        if offset in read or not _counted(bare, offset, word):
-            continue
-        if SIGNAL_WORD.search(word):
-            found.append(f"a signal this check cannot read: {line_of(text, offset)}")
-        if SOURCE_WORD.fullmatch(word) or word == "get_laters":
-            found.append(f"a main loop source this check cannot read: {line_of(text, offset)}")
-        if KEY_WORD.fullmatch(word):
-            found.append(f"a key binding this check cannot read: {line_of(text, offset)}")
-    for name, assigned in held.items():
-        for m in re.finditer(rf"(?<![\w$.]){re.escape(name)}(?![\w$])", bare):
-            used = re.match(rf"{DOT}(?:add|remove){OPEN}|\s*=(?!=)", bare[m.end() :]) is not None
-            if m.start() not in assigned and not used:
-                found.append(
-                    f"a main loop source this check cannot read: {line_of(text, m.start())}"
-                )
-    for m in re.finditer(r"\\u", bare):
-        found.append(f"a name this check cannot read: {line_of(text, m.start())}")
-    for kind, start, _ in literals(text):
-        if kind == "unclosed":
-            found.append(f"a line this check cannot read: {line_of(text, start)}")
-    return found
-
-
-def _counted(bare: str, offset: int, word: str) -> bool:
-    """Whether a word counts: every one does but the name a const, let, or var declares with =,
-    at that declaration, such as const keybindings = [...]. Everywhere else it counts, as a
-    text check cannot see which name a use refers to. A string name always counts."""
-    if bare[offset : offset + len(word)] != word:
-        return True
-    declares = re.search(r"\b(?:const|let|var)\s+$", bare[max(0, offset - 20) : offset])
-    assigned = re.match(r"\s*=(?![=>])", bare[offset + len(word) :])
-    return declares is None or assigned is None
-
-
-def misread(text: str, nodes: list[list[str | int]] | str) -> list[str]:
-    """Each place gjs's parser and this check's scanner disagree on: a string, template, or
-    regex the parser starts where the scanner starts none, a regex the scanner starts where
-    the parser starts none, or code the parser places where the scanner sees a literal or a
-    comment. A misread can hide code, so each one fails."""
-    if isinstance(nodes, str):
-        return [f"a file gjs cannot parse: {nodes}"]
-    # JavaScript also ends a line at \r, U+2028, and U+2029, and reads a first #! line as a
-    # comment; the scanner does neither, so such a file is not read at all.
-    if re.search("[\r\u2028\u2029]", text) or text.startswith("#!"):
-        return ["a file this check cannot read: a line break other than \\n, or a #! line"]
-    spans = literals(text)
-    starts = {start: kind for kind, start, _ in spans}
-    lines = [0, *(index + 1 for index, char in enumerate(text) if char == "\n")]
-    found: list[str] = []
-    regexes: set[int] = set()
-    for kind, line, column in nodes:
-        offset = lines[int(line) - 1] + int(column) - 1
-        if kind == "regex":
-            regexes.add(offset)
-        if kind != "code":
-            # The parser gives a template with no ${...} as a string.
-            plain = kind == "string" and text[offset : offset + 1] == "`"
-            agrees = starts.get(offset) == ("template" if plain else kind)
-        else:
-            agrees = not any(start <= offset < end for _, start, end in spans)
-        if not agrees:
-            found.append(f"a line this check cannot read: {line_of(text, offset)}")
-    # And each regex the scanner starts where the parser starts none: it divides there.
-    for kind, start, _ in spans:
-        if kind == "regex" and start not in regexes:
-            found.append(f"a line this check cannot read: {line_of(text, start)}")
-    return found
-
-
-def parse(sources: list[str]) -> list[list[list[str | int]] | str]:
-    """What gjs's parser finds in each source, by tests/style/js_nodes.js."""
+def parse(sources: list[str]) -> list[Read | str]:
+    """What gjs's parser reads in each source, by tests/style/js_nodes.js, or its error."""
     with tempfile.TemporaryDirectory() as folder:
         listed = Path(folder) / "sources.json"
         listed.write_text(json.dumps(sources))
         command = ["gjs", "-m", str(ROOT / "tests" / "style" / "js_nodes.js"), str(listed)]
         done = subprocess.run(command, capture_output=True, text=True)
     if done.returncode != 0:
-        raise RuntimeError(f"gjs could not parse the sources: {done.stderr.strip()}")
-    found: list[list[list[str | int]] | str] = json.loads(done.stdout)
-    return found
+        raise RuntimeError(f"gjs could not read the sources: {done.stderr.strip()}")
+    found: list[Json] = json.loads(done.stdout)
+    return [_read(each) for each in found]
 
 
 def checked(sources: list[str]) -> list[list[str]]:
-    """undone() for each source, with each place the scanner misread it."""
-    return [undone(s) + misread(s, nodes) for s, nodes in zip(sources, parse(sources), strict=True)]
+    """undone() for each source, as gjs's parser reads it."""
+    return [
+        [f"a file gjs cannot parse: {read}"] if isinstance(read, str) else undone(source, read)
+        for source, read in zip(sources, parse(sources), strict=True)
+    ]
 
 
-def line_of(text: str, offset: int) -> str:
-    number = text.count("\n", 0, offset) + 1
-    return f"line {number}: {text.splitlines()[number - 1].strip()}"
+def family(name: str) -> str | None:
+    """What a name connects, adds, or binds, if it is one of those names."""
+    if SIGNAL_WORD.search(name):
+        return "signal"
+    if SOURCE_WORD.fullmatch(name) or name == "get_laters":
+        return "main loop source"
+    if KEY_WORD.fullmatch(name):
+        return "key binding"
+    return None
+
+
+def undone(text: str, read: Read) -> list[str]:
+    """What the shell side connects, adds, or binds without keeping what disable() needs to
+    undo it, or without undoing it anywhere in the same file, and each place a name that
+    connects, adds, or binds stands other than in a call read here. It reads the file, not
+    which method runs when, so an undo anywhere in the file counts."""
+    lines = re.split(r"\r\n|[\n\r  ]", text)
+
+    def at(line: int) -> str:
+        return f"line {line}: {lines[line - 1].strip()}"
+
+    undos = {(c.receiver, c.name, c.args[0] if c.args else None) for c in read.calls}
+    laters = {LATERS, *read.holds}
+    found: list[str] = []
+    readable: set[int] = set()
+    for index, c in enumerate(read.calls):
+        plain = c.form == "dot" and c.receiver is not None
+        if plain and c.name in ("connect", "connect_after"):
+            readable.add(index)
+            if c.kept is None:
+                found.append(f"a signal whose id is not kept: {at(c.line)}")
+            elif (c.receiver, "disconnect", c.kept) not in undos:
+                found.append(f"{c.receiver} is never disconnected from {c.kept}")
+        elif plain and c.name == "connectObject":
+            readable.add(index)
+            owner = c.args[-1] if c.args else None
+            if owner is None or (c.receiver, "disconnectObject", owner) not in undos:
+                found.append(f"{c.receiver} is never disconnected: {at(c.line)}")
+        elif plain and c.name in GLIB_SOURCES and c.receiver in read.glib:
+            readable.add(index)
+            removes = {(g, "source_remove") for g in read.glib}
+            removes |= {(f"{g}.Source", "remove") for g in read.glib}
+            if c.kept is None or not any((r, n, c.kept) in undos for r, n in removes):
+                found.append(f"a main loop source never removed: {at(c.line)}")
+        elif c.name in TIMERS and c.form in ("dot", "bare") and c.receiver is not None:
+            readable.add(index)
+            clears = {(r, n, c.kept) for r in ("", c.receiver) for n in TIMERS.values()}
+            if c.kept is None or not clears & undos:
+                found.append(f"a main loop source never removed: {at(c.line)}")
+        elif plain and c.name == "add" and c.receiver in laters:
+            if c.kept is None or not any((r, "remove", c.kept) in undos for r in laters):
+                found.append(f"a main loop source never removed: {at(c.line)}")
+        elif plain and c.name == "get_laters" and c.receiver == "global.compositor" and c.use:
+            readable.add(index)
+        elif plain and c.name in KEYBINDINGS:
+            readable.add(index)
+            key = c.args[0] if c.args else None
+            if key is None:
+                found.append(f"a keybinding this check cannot read: {at(c.line)}")
+            elif (c.receiver, KEYBINDINGS[c.name], key) not in undos:
+                found.append(f"the keybinding {key} is never removed")
+        elif plain and c.name == "grab_accelerator":
+            readable.add(index)
+            if c.kept is None:
+                found.append(f"a key grab whose action is not kept: {at(c.line)}")
+            elif (c.receiver, "ungrab_accelerator", c.kept) not in undos:
+                found.append(f"{c.receiver} never ungrabs {c.kept}")
+    # A name that starts with an underscore is a private member: the extension's own, whose
+    # code is read where it is written, or GNOME Shell's, such as the magnifier's
+    # _connectSignals, which undoes itself and is left to review.
+    for line, name, site in read.names:
+        kind = family(name)
+        if kind and not name.startswith("_") and site != "declared" and site not in readable:
+            found.append(f"a {kind} this check cannot read: {at(line)}")
+    for line, _, role in read.held:
+        if role == "other":
+            found.append(f"a main loop source this check cannot read: {at(line)}")
+    return found
 
 
 def test_disable_undoes_every_signal_source_and_keybinding() -> None:
@@ -651,7 +433,7 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "Main.wm.addKeybinding('k', s, 0, 0, f);": "the keybinding 'k' is never removed",
         "Main.wm.addKeybinding(KEY, s, 0, 0, f);": "the keybinding KEY is never removed",
         "global.display.add_keybinding('k', s, 0, f);": "the keybinding 'k' is never removed",
-        "Main.wm.addKeybinding(this._name(), s, 0, 0, f);": "a keybinding this check cannot",
+        "Main.wm.addKeybinding(this._name(), s, 0, 0, f);": "the keybinding this._name() is never",
         "this._a.connect_object('x', f, this);": "a signal this check cannot read",
         "this._id = GObject.signal_connect(global.stage, 'x', f);": "a signal this check cannot",
         "this._id = GObject.signal_connect_after(this._a, 'x', f);": "a signal this check cannot",
@@ -683,7 +465,8 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
             "a signal this check cannot read"
         ),
         "Gio.DBus.session.own_name('org.example', 0, null, null);": "a signal this check cannot",
-        "global.stage['connect']('notify::x', f);": "a signal this check cannot read",
+        # The parser reads a string name as the name it is.
+        "global.stage['connect']('notify::x', f);": "a signal whose id is not kept",
         "global.stage.connect.call(global.stage, 'notify::x', f);": "a signal this check cannot",
         "global.stage.connect.apply(global.stage, args);": "a signal this check cannot read",
         "GLib.timeout_add.call(null, 0, 1, f);": "a main loop source this check cannot read",
@@ -728,20 +511,20 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "const s = a + +/\\d+/.exec(t)[0]; this._id = global.stage.connect('x', f);": (
             "global.stage is never disconnected from this._id"
         ),
-        # A regex the scanner takes for a division leaves code it cannot be, and fails.
-        "if (ok) /\\d+/.test(s); this._id = global.stage.connect('x', f);": "this check cannot",
-        "if (ok) /'/.test(s); this._id = global.stage.connect('x', f);": "this check cannot",
-        "if (p) /\\/\\//.test(p); this._id = global.stage.connect('x', f);": "this check cannot",
+        # A regex after if (...) is a regex, and hides nothing after it.
+        "if (ok) /\\d+/.test(s); this._id = global.stage.connect('x', f);": "never disconnected",
+        "if (ok) /'/.test(s); this._id = global.stage.connect('x', f);": "never disconnected",
+        "if (p) /\\/\\//.test(p); this._id = global.stage.connect('x', f);": "never disconnected",
         # A property named in or of is not the keyword a regex may follow.
         "const r = this._size.in / 2; this._id = global.stage.connect('x', f);": (
             "global.stage is never disconnected from this._id"
         ),
-        # A regex only the scanner sees, where JavaScript divides, may end in a comment.
+        # A division before a comment is a division, and the comment's text is not code.
         "this._id = s.connect('x', f);\nconst x = {} / [] // s.disconnect(this._id)": (
-            "this check cannot read"
+            "s is never disconnected from this._id"
         ),
         "this._id = s.connect('x', f);\nconst x = n++ /* c */ / [] // s.disconnect(this._id)": (
-            "this check cannot read"
+            "s is never disconnected from this._id"
         ),
         # get_laters() held only in a full statement of its own.
         "this._l = (this._laters = global.compositor.get_laters()).add(0, f);": (
@@ -752,10 +535,10 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         ),
         # A line break ends a statement only when the next line does not go on with it.
         "const laters = global.compositor.get_laters()\n    ?.add(0, f);": "this check cannot read",
-        "this._laters = global.compositor.get_laters()\n    ['add'](0, f);": "this check cannot",
+        "this._laters = global.compositor.get_laters()\n    ['add'](0, f);": "never removed",
         # JavaScript ends a line at U+2028 and U+2029 too, and a first #! line is a comment.
-        "this._id = s.connect('x', f);\n// a\u2028/*\ns.disconnect(this._id) /* */": "cannot read",
-        "#!s.disconnect(this._id)\nthis._id = s.connect('x', f);": "this check cannot read",
+        "this._id = s.connect('x', f);\n// a\u2028/*\ns.disconnect(this._id) /* */": "never",
+        "#!s.disconnect(this._id)\nthis._id = s.connect('x', f);": "never disconnected",
         # allowKeybinding changes the modes a key of GNOME's runs in, until it is set back.
         "Main.wm.allowKeybinding('switch-applications', Shell.ActionMode.ALL);": (
             "a key binding this check cannot read"
@@ -894,15 +677,8 @@ def test_a_bare_or_borrowed_name_fails() -> None:
     assert not missed, "\n".join(missed)
 
 
-def test_the_parser_counts_columns_from_one_in_characters() -> None:
-    # gjs 1.80 and 1.88 count from different origins, in different units; js_nodes.js
-    # counts from 1, in characters, on either.
-    assert parse(["x;"]) == [[["code", 1, 1]]]
-    assert parse(["'\U0001d465'; x;"]) == [[["string", 1, 1], ["code", 1, 6]]]
-
-
-# Names spelled to hide a call from a text reading, which gjs's parser reads as the call they
-# make: an escape, a joined string, and a space at a dot. Left undone, each fails.
+# Names spelled to hide a call from a reading of the text, which gjs's parser reads as the call
+# each makes: an escape, a joined string, and a space at a dot. Left undone, each fails.
 SPELLED = (
     "global.stage['\\x63onnect']('x', f);",
     "global.stage['\\u{63}onnect']('x', f);",
