@@ -6,6 +6,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from tests.images import (
     Box,
+    bar_heights,
     best_shift,
     corner_gaps,
     crop,
@@ -144,3 +145,25 @@ def keeps_each_pixel(shell: Shell, scene: Scene, part: str, most: float) -> None
     inked = (before > 0.05) | (after > 0.05)
     error = float(np.abs(after - before)[inked].mean()) * 100
     assert error <= most, f"each pixel's ink off by {error:.1f} percent on average"
+
+
+@then(
+    parsers.parse(
+        "its thin bars are drawn as tall as the font draws them, within {most:g} pixel on average"
+    )
+)
+def bars_thin(shell: Shell, scene: Scene, most: float) -> None:
+    source = pattern_box(shell, "serif")
+    unzoomed = crop(scene.image("unzoomed"), source)
+    zoomed = crop(scene.image("text"), scene.on_screen(source))
+    paper, darkest = float(unzoomed.max()), float(unzoomed.min())
+    heights = bar_heights(
+        (paper - unzoomed) / (paper - darkest),
+        (paper - zoomed) / (paper - darkest),
+        round(scene.zoom),
+    )
+    assert heights, "no thin bars to measure"
+    error = sum(abs(shown - meant) for shown, meant in heights) / len(heights)
+    assert error <= most, (
+        f"{len(heights)} bars drawn {error:.1f} pixels off their height on average"
+    )

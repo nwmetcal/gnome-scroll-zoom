@@ -13,13 +13,19 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
 
   At 6x each pixel of the screen is drawn 6 pixels wide, enough to see a corner rounded or a
   stroke thickened. A crisp right angle measures about 0.3 pixels in from where its edges
-  meet, and GNOME's blurry scaling about 1.7; a corner within 1 pixel reads as square.
-  GNOME's scaling keeps the ink of what it scales, so text within 5 percent of its ink is
-  drawn at the font's weight: 5 percent of a stroke 6 pixels wide is under a third of a
-  pixel. Shrunk back to the screen's size, GNOME's blur leaves each pixel's ink 10 percent
-  off on average, as it moves ink between neighbours. Within 5 percent, and drawn in ink and
-  paper with at most a third of the in-between pixels GNOME's scaling leaves, each edge sits
-  where the font put it, so a thin stroke cannot come out wide and pale.
+  meet, and GNOME's blurry scaling 1.7 at the stems and about 3 at the square; a corner
+  within 1 pixel reads as square. GNOME's scaling keeps the ink of what it scales, so text
+  within 5 percent of its ink is drawn at the font's weight: 5 percent of a stroke 6 pixels
+  wide is under a third of a pixel. Shrunk back to the screen's size, GNOME's blur leaves
+  each pixel's ink 11 percent off on average, as it moves ink between neighbours, and drawn
+  as hard pixels the serif line keeps 72 percent of the in-between pixels GNOME's scaling
+  leaves, where a crisp drawing keeps about 12, so a third tells them apart. A serif font's
+  thin bars, the rows it draws partly inked with nothing above or below, are as tall zoomed
+  as their ink: a row 0.6 inked is 3.6 pixels of full ink at 6x. A crisp drawing's bars come
+  within about 0.4 pixels of that on average; bars drawn heavy, as hard pixels, or with
+  GNOME's blur come 1.2 to 1.7 pixels off. Each pixel's ink kept, few in-between pixels, and thin
+  bars as tall as their ink put each edge where the font put it, so a thin stroke cannot
+  come out wide and pale.
 
   Scenario: Text has half the blur of GNOME's own zoom
     Given zoom is on at 4x over the test pattern
@@ -62,3 +68,4 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
     When the zoomed screen is captured with sharp smoothing and with GNOME's standard scaling
     Then shrunk back to its unzoomed size, the serif line keeps each pixel's ink within 5 percent on average
     And the serif line has at most a third as many in-between pixels as with GNOME's scaling
+    And its thin bars are drawn as tall as the font draws them, within 1 pixel on average

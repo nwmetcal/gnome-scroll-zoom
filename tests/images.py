@@ -177,6 +177,35 @@ def shrunk(pixels: Gray, zoom: int) -> Gray:
     return pixels.reshape(height // zoom, zoom, width // zoom, zoom).mean(axis=(1, 3))
 
 
+def _height(profile: Gray) -> float:
+    """How tall the half-ink part of a profile of ink is, in pixels, between where it first
+    rises through half and where it last falls through it; 0 when it never reaches half."""
+    if profile.max() < 0.5:
+        return 0.0
+    return len(profile) - _rise(profile[::-1]) - _rise(profile)
+
+
+def bar_heights(unzoomed: Gray, zoomed: Gray, zoom: int) -> list[tuple[float, float]]:
+    """For each pixel of an unzoomed area, as ink (see `ink`), that is part of a thin flat
+    bar, partly inked with the pixels above and below it all but empty: how tall the bar is
+    drawn in the zoomed view, as ink, and how tall its ink says it is, both in zoomed pixels.
+    The drawn height is the half-ink part of each column down the pixel's block and the
+    empty blocks above and below it, the mean over the block's columns; a bar drawn crisply
+    as tall as its ink matches, and one drawn wide and pale, or blurred, does not."""
+    height, width = unzoomed.shape
+    if zoomed.shape != (height * zoom, width * zoom):
+        raise ValueError(f"a {zoomed.shape} view is not {zoom} times {unzoomed.shape}")
+    found: list[tuple[float, float]] = []
+    for y in range(1, height - 1):
+        for x in range(width):
+            here, above, below = unzoomed[y, x], unzoomed[y - 1, x], unzoomed[y + 1, x]
+            if 0.2 <= here <= 0.95 and above < 0.1 and below < 0.1:
+                block = zoomed[(y - 1) * zoom : (y + 2) * zoom, x * zoom : (x + 1) * zoom]
+                drawn = float(np.mean([_height(block[:, k]) for k in range(zoom)]))
+                found.append((drawn, float(here) * zoom))
+    return found
+
+
 def blocks_uniform(pixels: Gray, size: int) -> float:
     """The largest spread of values inside any whole size-by-size block, aligned to the grid
     the blocks start on; 0 when every block is one flat color."""

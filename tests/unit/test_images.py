@@ -7,7 +7,7 @@ from collections.abc import Callable
 import numpy as np
 import pytest
 
-from tests.images import Box, Gray, corner_gaps, crop, ink, ink_amount, shrunk
+from tests.images import Box, Gray, bar_heights, corner_gaps, crop, ink, ink_amount, shrunk
 
 IMAGE = np.zeros((800, 1280))
 
@@ -89,3 +89,22 @@ def test_a_view_shrunk_back_is_the_mean_of_each_block() -> None:
 def test_a_view_not_in_whole_blocks_is_an_error() -> None:
     with pytest.raises(ValueError, match="not whole blocks"):
         shrunk(np.zeros((7, 9)), 3)
+
+
+def bar(x: Gray, y: Gray) -> Gray:
+    """A flat bar half a pixel tall inside one row of pixels, 4 pixels long."""
+    return ((x >= 1) & (x < 5) & (y >= 2.25) & (y < 2.75)).astype(float)
+
+
+def test_a_crisp_bar_is_drawn_as_tall_as_its_ink() -> None:
+    unzoomed = 1 - drawn(bar, (6, 5))
+    zoomed = 1 - drawn(bar, (36, 30), zoom=6)
+    heights = bar_heights(unzoomed, zoomed, 6)
+    assert len(heights) == 4
+    assert all(abs(shown - meant) < 0.1 for shown, meant in heights)
+
+
+def test_a_bar_drawn_wide_and_pale_is_not() -> None:
+    unzoomed = 1 - drawn(bar, (6, 5))
+    pale = np.repeat(np.repeat(unzoomed, 6, axis=0), 6, axis=1)
+    assert all(abs(shown - meant) > 1 for shown, meant in bar_heights(unzoomed, pale, 6))
