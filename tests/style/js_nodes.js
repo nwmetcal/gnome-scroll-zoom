@@ -96,7 +96,9 @@ function read(ast) {
 
     // First GLib's names, and the names that hold the laters.
     (function scan(node) {
-        if (node.type === 'ImportDeclaration' && node.moduleRequest?.source.value === 'gi://GLib') {
+        // Newer SpiderMonkey keeps an import's source under moduleRequest, older under source.
+        const source = node.moduleRequest?.source ?? node.source;
+        if (node.type === 'ImportDeclaration' && source?.value === 'gi://GLib') {
             for (const specifier of node.specifiers)
                 glib.add(specifier.name.name);
         }
