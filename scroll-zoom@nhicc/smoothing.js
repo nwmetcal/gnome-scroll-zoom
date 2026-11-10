@@ -12,15 +12,34 @@
 //    pixels around it), e.g. ink and paper.
 // 2. Read each source pixel's color as coverage: how much of it the dark tone
 //    covers. Antialiased text is drawn exactly that way.
-// 3. For each of the 16 nearest source pixels, the direction its coverage
-//    changes fastest gives the edge's angle, and the coverage gives where
-//    the edge cuts through it: the straight edge at that angle that leaves
-//    exactly that much of the pixel dark.
-// 4. Blend the distances to those 16 edges (smoothly, weighted toward the
-//    nearest) and draw the dark tone wherever the blend says "inside", with
-//    a 1-screen-pixel antialiased border.
-// A stem that falls across two pixel columns as two half-gray columns comes
-// back as one solid stroke of the right width, and curves stay smooth.
+// 3. For each of the 4 nearest source pixels, fit a shape to it and its 8
+//    neighbours that covers exactly as much of the pixel as its coverage
+//    says, so every pixel keeps the ink it had:
+//    - a straight edge across it, at the angle its coverage changes fastest,
+//      or a thin band across it where the coverage peaks in it, as a serif's
+//      hairline or a crossbar does, fitted to the light tone's coverage where
+//      the text is light on a dark ground;
+//    - or, where an upright edge and a flat one meeting at a corner, or an
+//      upright stroke joining a flat one, explain the neighbours almost
+//      exactly and clearly better, that corner or join, as at a stem's end or
+//      under a crossbar;
+//    - a pixel with no ink, or all ink, takes the edges its neighbours give;
+//    - with ink on both sides, the pixels two away along its row and column
+//      tell which side its ink goes on from.
+// 4. Blend the 4 shapes' distances only near the pixels' shared edges, and
+//    draw the dark tone wherever the blend says "inside", with a
+//    1-screen-pixel antialiased border.
+//    The text's ink, dark on light or light on a dark ground, is also drawn
+//    where the coverage between the pixels' centres is over half, except
+//    where a corner or join fits a pixel exactly, as at an inside corner; and
+//    where the text's ink lies close on both sides across or down, which
+//    joins a stroke across a hairline the shapes leave without filling an
+//    inside corner.
+// The edge position moves only the edges of strokes.
+// Blending each pixel's shape only with its nearest neighbours keeps a
+// stem's ends and a serif's corners square and a hairline as thin as the
+// font draws it; a stem that falls across two pixel columns as two
+// half-gray columns still comes back as one solid stroke of the right width.
 //
 // Where the 6x6 pixels don't look like two tones with sharp edges (photos,
 // gradients, soft shadows), it keeps a smooth bicubic estimate instead,
@@ -99,29 +118,39 @@ function generateCoverage() {
     return code;
 }
 
-// For each of the 16 pixels around the sample point: the coverage gradient
-// (Scharr, which gets edge angles right more evenly than Sobel), that pixel's
-// edge distance, and its share of the blend. Cubic B-spline weights are
-// smooth and never negative, so neighbouring pixels' slightly different
-// edge estimates average out instead of showing as bumps, and straight edges
-// stay exactly straight.
-function generateEdgeBlend() {
-    const w = ['x', 'y', 'z', 'w'];
-    let code = 'float d = 0.0; float steepest = 0.0;\n';
-    for (const j of range(-1, 2)) {
-        for (const i of range(-1, 2)) {
-            const c = (di, dj) => `cv[${block(i + di, j + dj)}]`;
-            code += `{ vec2 g = vec2(
-                3.0 * (${c(1, -1)} - ${c(-1, -1)}) + 10.0 * (${c(1, 0)} - ${c(-1, 0)}) + 3.0 * (${c(1, 1)} - ${c(-1, 1)}),
-                3.0 * (${c(-1, 1)} - ${c(-1, -1)}) + 10.0 * (${c(0, 1)} - ${c(0, -1)}) + 3.0 * (${c(1, 1)} - ${c(1, -1)})) / 32.0;
-              d += (bx.${w[i + 1]} * by.${w[j + 1]}) * sz_edge_distance(p, base + vec2(${num(i)}, ${num(j)}), ${c(0, 0)}, g);\n`;
-            if (i >= 0 && i <= 1 && j >= 0 && j <= 1)
-                code += '  steepest = max(steepest, length(g));\n';
-            code += '}\n';
+// How far apart the 4 nearest pixels' shapes are blended, in source pixels:
+// see sz_blend.
+const SHARED_PX = 0.3;
+// How far either side of a point the text's ink is looked for, to join a
+// stroke across a hairline the shapes leave between them, in source pixels.
+const JOIN_PX = 0.2;
+// The 4 source pixels around the sample point, in the coverage block.
+const near = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([i, j]) => `cv[${block(i, j)}]`);
+
+// The mean coverage of the 6x6 pixels around the sample point.
+function mean6() {
+    return `((${range(0, SIZE * SIZE - 1).map(n => `cv[${n}]`).join(' + ')}) / ${num(SIZE * SIZE)})`;
+}
+
+// Fits the 4 nearest pixels' shapes, s0 to s3, from each one's 3x3.
+function generateShapes() {
+    let code = 'float steepest = 0.0; float g = 0.0;\n';
+    code += `float peak = max(max(${near[0]}, ${near[1]}), max(${near[2]}, ${near[3]}));\n`;
+    for (const j of [0, 1]) {
+        for (const i of [0, 1]) {
+            const row = dj => `vec3(${[-1, 0, 1].map(di => `cv[${block(i + di, j + dj)}]`).join(', ')})`;
+            // The pixels two away along its row and column: whether a neighbour's
+            // far side is empty tells which side the pixel's own ink goes on from.
+            const far = `vec4(cv[${block(i - 2, j)}], cv[${block(i + 2, j)}], cv[${block(i, j - 2)}], cv[${block(i, j + 2)}])`;
+            code += `SzShape s${j * 2 + i} = sz_shape(${row(-1)}, ${row(0)}, ${row(1)}, ${far}, light_text, g);\n`;
+            code += 'steepest = max(steepest, g);\n';
         }
     }
     return code;
 }
+
+// What is drawn at f plus an offset.
+const blendAt = offset => `sz_drawn(s0, s1, s2, s3, f + ${offset}, half_width, light_text, c4, fill)`;
 
 const DECLARATIONS = `
 uniform vec2 sz_offset;   // texture coordinate shown at the view's top-left
@@ -147,14 +176,6 @@ float sz_line_distance(vec4 c, vec4 a, vec4 b) {
     return length(c.rgb - (a.rgb + ab * t)) / max(length(ab), 0.001);
 }
 
-// Cubic B-spline weights for the four taps around fraction t.
-vec4 sz_bspline(float t) {
-    float t2 = t * t;
-    float t3 = t2 * t;
-    float u = 1.0 - t;
-    return vec4(u * u * u, 3.0 * t3 - 6.0 * t2 + 4.0, -3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0, t3) / 6.0;
-}
-
 // Catmull-Rom weights for the four taps around fraction t.
 vec4 sz_cubic(float t) {
     float t2 = t * t;
@@ -165,34 +186,329 @@ vec4 sz_cubic(float t) {
                 0.5 * t3 - 0.5 * t2);
 }
 
-// Signed distance (source pixels, positive = dark side) from point q to the
-// edge through the pixel at 'center' with dark coverage c and coverage
-// gradient g: the straight edge, perpendicular to g, that leaves a fraction c
-// of the pixel's square on the dark side.
-float sz_edge_distance(vec2 q, vec2 center, float c, vec2 g) {
-    // Flat pixels have no edge direction: inside or outside by coverage.
-    float flat_distance = 2.0 * c - 1.0;
-    float g_len = length(g);
-    if (g_len < 0.001)
-        return flat_distance;
+// Shapes are measured in source pixels from the pixel's centre, positive
+// inside the dark tone. Each takes the pixel's 3x3 coverage as three rows,
+// top to bottom, each from left (x) to right (z).
 
-    vec2 n = g / g_len;
+// Along one axis: the ink in a pixel covered x, between neighbours covered a
+// (before) and b (after), and the pixels beyond them covered a2 and b2. Ink
+// that goes on into a neighbour touches that side; ink on neither side is a
+// band in the middle. With ink on both sides, a neighbour whose far side is
+// empty holds its ink against this pixel, so this pixel's ink goes on from
+// that side alone; otherwise it leaves a gap in the middle, closed when the
+// pixel is nearly full. A pixel with no ink along the axis has no band at all,
+// so it sits beyond the antialiased border of any edge.
+float sz_interval(float t, float a2, float a, float x, float b, float b2, float half_width) {
+    float ta = smoothstep(0.0, 0.06, a);
+    float tb = smoothstep(0.0, 0.06, b);
+    float from_a = 1.0 - smoothstep(0.0, 0.06, a2);
+    float from_b = 1.0 - smoothstep(0.0, 0.06, b2);
+    float none = mix(-0.5 - half_width - abs(t), min(0.5 * x, x - half_width) - abs(t),
+                     smoothstep(0.0, 0.05, x));
+    float before = min(t + 0.5 + a, x - 0.5 - t);
+    float after = min(t - 0.5 + x, 0.5 + b - t);
+    float s = max(a + b, 0.000001);
+    float gap = max(min(t + 0.5 + a, x * a / s - 0.5 - t),
+                    min(t - 0.5 + x * b / s, 0.5 + b - t));
+    float full = min(t + 0.5 + a, 0.5 + b - t);
+    float split = mix(mix(gap, after, from_b), mix(before, gap, from_b), from_a);
+    float both = mix(split, full, smoothstep(0.75, 0.95, x));
+    return mix(mix(none, before, ta), mix(after, both, ta), tb);
+}
+
+// Splits the 3x3 into a profile across (X) times a profile down (Y), through
+// the pixel, so X.y * Y.y is its own coverage. The steadier profile reaches 1:
+// a stem's edge is a column of the same coverage, not a band across. Returns
+// how far the product is from the 3x3.
+float sz_factor(vec3 top, vec3 mid, vec3 bot, vec4 far, out vec3 X, out vec3 Y,
+               out vec4 far_xy) {
+    float c = max(mid.y, 0.000001);
+    vec3 col = vec3(top.y, mid.y, bot.y);
+    float rmax = max(max(mid.x, mid.y), mid.z);
+    float cmax = max(max(col.x, col.y), col.z);
+    float rspread = rmax - min(min(mid.x, mid.y), mid.z);
+    float cspread = cmax - min(min(col.x, col.y), col.z);
+    float lo = rmax;
+    float hi = c / max(cmax, 0.000001);
+    float scale = cspread <= rspread ? hi : lo;
+    // A profile that peaks in the pixel runs across a thin stroke, and the
+    // stroke runs along the other one, as at a stem's end: that one reaches 1.
+    float row_peak = mid.y - max(mid.x, mid.z);
+    float col_peak = mid.y - max(col.x, col.z);
+    if (row_peak > 0.05 && col_peak < 0.0)
+        scale = hi;
+    else if (col_peak > 0.05 && row_peak < 0.0)
+        scale = lo;
+    scale = max(lo <= hi ? clamp(scale, lo, hi) : 0.5 * (lo + hi), 0.000001);
+    X = clamp(mid / scale, 0.0, 1.0);
+    Y = clamp(col * scale / c, 0.0, 1.0);
+    far_xy = clamp(vec4(far.xy / scale, far.zw * scale / c), 0.0, 1.0);
+    vec3 e0 = X * Y.x - top;
+    vec3 e1 = X * Y.y - mid;
+    vec3 e2 = X * Y.z - bot;
+    return dot(e0, e0) + dot(e1, e1) + dot(e2, e2);
+}
+
+// How much of a pixel's square lies beyond offset o along unit normal n.
+// Projected onto n the square spans -s..s with sloped ends 'a' wide, so the
+// area is quadratic near the ends, linear between.
+float sz_area_beyond(float o, vec2 n) {
     float a = min(abs(n.x), abs(n.y));
     float b = max(abs(n.x), abs(n.y));
-    // Projected onto n, the square spans -s..s with sloped ends 'a' wide, so
-    // the area beyond offset o is quadratic near the ends, linear between.
+    float s = 0.5 * (a + b);
+    float ab2 = max(2.0 * a * b, 0.000001);
+    if (o >= s)
+        return 0.0;
+    if (o <= -s)
+        return 1.0;
+    if (o > s - a)
+        return (s - o) * (s - o) / ab2;
+    if (o < a - s)
+        return 1.0 - (o + s) * (o + s) / ab2;
+    return clamp((s - 0.5 * a - o) / max(b, 0.000001), 0.0, 1.0);
+}
+
+// The offset along unit normal n of the straight edge that leaves a fraction
+// c of the pixel's square on the side n points to.
+float sz_edge_offset(float c, vec2 n) {
+    float a = min(abs(n.x), abs(n.y));
+    float b = max(abs(n.x), abs(n.y));
     float s = 0.5 * (a + b);
     float corner = a / (2.0 * b);
-    float o;
     if (c <= corner)
-        o = s - sqrt(2.0 * a * b * c);
-    else if (c >= 1.0 - corner)
-        o = sqrt(2.0 * a * b * (1.0 - c)) - s;
-    else
-        o = s - 0.5 * a - b * c;
+        return s - sqrt(2.0 * a * b * c);
+    if (c >= 1.0 - corner)
+        return sqrt(2.0 * a * b * (1.0 - c)) - s;
+    return s - 0.5 * a - b * c;
+}
 
-    float edge_distance = dot(q - center, n) - o;
-    return mix(flat_distance, edge_distance, smoothstep(0.02, 0.1, g_len));
+float sz_half_error(vec2 v, float c, float o, vec2 n) {
+    float e = sz_area_beyond(o - dot(v, n), n) - c;
+    return e * e;
+}
+
+// Coverage of the 3x3 at offset v from its centre, between pixel centres.
+float sz_coverage_at(vec2 v, vec3 top, vec3 mid, vec3 bot) {
+    vec3 wx = vec3(max(-v.x, 0.0), 1.0 - abs(v.x), max(v.x, 0.0));
+    vec3 wy = vec3(max(-v.y, 0.0), 1.0 - abs(v.y), max(v.y, 0.0));
+    return dot(wy, vec3(dot(wx, top), dot(wx, mid), dot(wx, bot)));
+}
+
+// How far a thin band of width w across normal m through the pixel's centre
+// is from the neighbour at v's coverage; only neighbours across the band
+// count, since a band's width may change along it.
+float sz_band_error(vec2 v, float c, float w, vec2 m) {
+    float along = dot(v, m);
+    float e = clamp(1.0 - sz_area_beyond(0.5 * w - along, m)
+        - sz_area_beyond(0.5 * w + along, m), 0.0, 1.0) - c;
+    return abs(along) > 0.7 ? e * e : 0.0;
+}
+
+// A pixel's straight edge or thin band, fitted once and then measured at any
+// point near the pixel.
+struct SzSlant {
+    vec2 n;       // the straight edge's normal and offset
+    float o;
+    vec2 m;       // the thin band's normal and width
+    float w;
+    vec4 across;  // coverage two away, beside, beside, and two away across the band
+    float flat_distance;
+    float ridge;
+    float drawn_along;
+};
+
+float sz_slanted_at(SzSlant s, vec2 q, float half_width) {
+    float band = sz_interval(dot(q, s.m), s.across.x, s.across.y, s.w, s.across.z, s.across.w,
+                             half_width);
+    return mix(mix(s.flat_distance, band, s.ridge), dot(q, s.n) - s.o, s.drawn_along);
+}
+
+// The straight edge or thin band, and in 'error' how far it is from explaining
+// the neighbours.
+SzSlant sz_slanted(vec3 top, vec3 mid, vec3 bot, vec4 far, out float error, out float steep) {
+    SzSlant fit;
+    float c = mid.y;
+    // Scharr, which gets edge angles right more evenly than Sobel.
+    vec2 g = vec2(3.0 * (top.z - top.x) + 10.0 * (mid.z - mid.x) + 3.0 * (bot.z - bot.x),
+                  3.0 * (bot.x - top.x) + 10.0 * (bot.y - top.y) + 3.0 * (bot.z - top.z)) / 32.0;
+    float g_len = length(g);
+    vec2 n = g_len > 0.000001 ? g / g_len : vec2(0.0, 1.0);
+    float o = sz_edge_offset(c, n);
+    float edge_error = sz_half_error(vec2(-1.0, -1.0), top.x, o, n)
+        + sz_half_error(vec2(0.0, -1.0), top.y, o, n) + sz_half_error(vec2(1.0, -1.0), top.z, o, n)
+        + sz_half_error(vec2(-1.0, 0.0), mid.x, o, n) + sz_half_error(vec2(1.0, 0.0), mid.z, o, n)
+        + sz_half_error(vec2(-1.0, 1.0), bot.x, o, n) + sz_half_error(vec2(0.0, 1.0), bot.y, o, n)
+        + sz_half_error(vec2(1.0, 1.0), bot.z, o, n);
+
+    // Where the coverage peaks in this pixel, the direction it falls off
+    // fastest (the Hessian's most negative eigenvalue) is across the band.
+    float hxx = mid.z + mid.x - 2.0 * c;
+    float hyy = bot.y + top.y - 2.0 * c;
+    float hxy = 0.25 * (bot.z + top.x - top.z - bot.x);
+    float lambda = 0.5 * (hxx + hyy) - sqrt(max(0.25 * (hxx - hyy) * (hxx - hyy) + hxy * hxy, 0.0));
+    vec2 v1 = vec2(hxy, lambda - hxx);
+    vec2 v2 = vec2(lambda - hyy, hxy);
+    vec2 m = dot(v1, v1) > dot(v2, v2) ? v1 : v2;
+    m = length(m) > 0.000001 ? normalize(m) : vec2(0.0, 1.0);
+    float a = min(abs(m.x), abs(m.y));
+    float b = max(abs(m.x), abs(m.y));
+    float s = 0.5 * (a + b);
+    float h = s - 0.5 * a - 0.5 * b * (1.0 - c);
+    h = h <= s - a ? h : s - sqrt(max(a * b * (1.0 - c), 0.0));
+    float w = max(2.0 * h, 0.0);
+    // Ink in the pixels on either side across it carries the band on into them,
+    // as a stroke wider than the pixel does.
+    // The pixels two away are along this pixel's row and column, so they say
+    // nothing about a band across a slant: there the neighbours' ink is taken
+    // as going on, as a stroke's usually does.
+    vec2 beyond = abs(m.x) > 0.9 ? (m.x > 0.0 ? far.xy : far.yx)
+        : (abs(m.y) > 0.9 ? (m.y > 0.0 ? far.zw : far.wz) : vec2(1.0));
+    fit.n = n;
+    fit.o = o;
+    fit.m = m;
+    fit.w = w;
+    fit.across = vec4(beyond.x, sz_coverage_at(-m, top, mid, bot), sz_coverage_at(m, top, mid, bot),
+                    beyond.y);
+    float band_error = sz_band_error(vec2(-1.0, -1.0), top.x, w, m)
+        + sz_band_error(vec2(0.0, -1.0), top.y, w, m) + sz_band_error(vec2(1.0, -1.0), top.z, w, m)
+        + sz_band_error(vec2(-1.0, 0.0), mid.x, w, m) + sz_band_error(vec2(1.0, 0.0), mid.z, w, m)
+        + sz_band_error(vec2(-1.0, 1.0), bot.x, w, m) + sz_band_error(vec2(0.0, 1.0), bot.y, w, m)
+        + sz_band_error(vec2(1.0, 1.0), bot.z, w, m);
+
+    // Flat pixels have no edge direction: inside or outside by coverage.
+    bool partial = c > 0.02 && c < 0.98;
+    fit.flat_distance = partial ? 2.0 * c - 1.0 : (c > 0.5 ? 1.0 : -1.0);
+    float ridge = smoothstep(0.1, 0.3, -lambda);
+    fit.ridge = ridge;
+    // A stroke's pixel can have a steep gradient across it from a stroke
+    // joining it; where an upright or flat band explains the pixels across it
+    // better than the straight edge explains its neighbours, it is the band.
+    // Across a slant the band fits too loosely to judge by.
+    float along = smoothstep(0.03, 0.12, g_len);
+    // How sharp the pixel's structure is, for telling text from a smooth
+    // gradient: its gradient, or how sharply its coverage peaks across a thin
+    // stroke, which two strokes a hairline apart have without much gradient.
+    steep = max(g_len, max(-lambda, 0.0));
+    float upright_or_flat = smoothstep(0.85, 0.95, max(abs(m.x), abs(m.y)));
+    fit.drawn_along = along
+        * (1.0 - ridge * upright_or_flat * smoothstep(0.0, 0.1, edge_error - band_error));
+    // Whether a corner explains the neighbours better is judged against the
+    // straight edge, as at a stem's end, where a band across would fit as well.
+    error = mix(ridge > 0.0 ? band_error : 0.0, edge_error, along);
+    return fit;
+}
+
+// One pixel's shape: the straight edge or band, unless an upright edge and a
+// flat one meeting at a corner explain the neighbours almost exactly and
+// clearly better, as at a stem's end. Text's corners are upright and flat; a
+// curve or a slanted stroke is never that exact, and drawn as corners it would
+// show steps.
+struct SzShape {
+    vec3 X;    // the corner's profiles across and down, and two away
+    vec3 Y;
+    vec4 F;
+    vec3 PX;   // the join's
+    vec3 PY;
+    vec4 PF;
+    SzSlant dark;
+    SzSlant light;
+    float use_corner;
+    float use_join;
+    float empty;
+    float full;
+};
+
+SzShape sz_shape(vec3 top, vec3 mid, vec3 bot, vec4 far, float light_text, out float steep) {
+    SzShape s;
+    float corner_error = sz_factor(top, mid, bot, far, s.X, s.Y, s.F);
+    // Ink in either of an upright structure and a flat one: what an empty
+    // pixel's neighbours reach into it with.
+    vec3 PX;
+    vec3 PY;
+    vec4 PF;
+    float join_error = sz_factor(1.0 - top, 1.0 - mid, 1.0 - bot, 1.0 - far, PX, PY, PF);
+    s.PX = 1.0 - PX;
+    s.PY = 1.0 - PY;
+    s.PF = 1.0 - PF;
+    // A light stroke's thin band is a dip in the dark tone's coverage, so where
+    // the text is light the straight edge or band is fitted to the light tone.
+    float dark_error;
+    float light_error;
+    float light_steep;
+    s.dark = sz_slanted(top, mid, bot, far, dark_error, steep);
+    s.light = sz_slanted(1.0 - top, 1.0 - mid, 1.0 - bot, 1.0 - far, light_error, light_steep);
+    float slanted_error = mix(dark_error, light_error, light_text);
+    s.use_corner = smoothstep(0.0, 0.1, slanted_error - corner_error - 0.1)
+        * (1.0 - smoothstep(0.02, 0.06, corner_error));
+    // Where an upright stroke and a flat one join, as a stem under a crossbar
+    // or a bar, the join explains the pixel's neighbours as exactly.
+    s.use_join = join_error < corner_error
+        ? smoothstep(0.0, 0.1, slanted_error - join_error - 0.1)
+            * (1.0 - smoothstep(0.02, 0.06, join_error)) : 0.0;
+    s.empty = 1.0 - smoothstep(0.0, 0.03, mid.y);
+    s.full = smoothstep(0.97, 1.0, mid.y);
+    return s;
+}
+
+float sz_shape_at(SzShape s, vec2 q, float half_width, float light_text) {
+    float corner = min(sz_interval(q.x, s.F.x, s.X.x, s.X.y, s.X.z, s.F.y, half_width),
+                       sz_interval(q.y, s.F.z, s.Y.x, s.Y.y, s.Y.z, s.F.w, half_width));
+    float join = max(sz_interval(q.x, s.PF.x, s.PX.x, s.PX.y, s.PX.z, s.PF.y, half_width),
+                     sz_interval(q.y, s.PF.z, s.PY.x, s.PY.y, s.PY.z, s.PF.w, half_width));
+    float d = light_text < 1.0 ? sz_slanted_at(s.dark, q, half_width) : 0.0;
+    if (light_text > 0.0)
+        d = mix(d, -sz_slanted_at(s.light, q, half_width), light_text);
+    d = mix(mix(d, corner, s.use_corner), join, s.use_join);
+    // A pixel with no ink has none of its own, and nears its neighbours' ink
+    // only where it reaches its edge; beyond its edge, its neighbour's shape
+    // decides. A pixel all ink is the same with ink and paper swapped.
+    d = mix(d, min(join, 0.0), s.empty);
+    return mix(d, max(corner, 0.0), s.full);
+}
+
+// The 4 nearest pixels' shapes (top-left, top-right, bottom-left,
+// bottom-right) at p, measured from the top-left pixel's centre: each weighted
+// toward the nearest, and only shared with a neighbour across a band SHARED_PX
+// source pixels wide, centred on their common edge.
+float sz_blend(SzShape s00, SzShape s10, SzShape s01, SzShape s11, vec2 p, float half_width,
+               float light_text) {
+    vec2 share = clamp((p - 0.5) / ${SHARED_PX.toFixed(2)} + 0.5, 0.0, 1.0);
+    vec4 w = vec4((1.0 - share.x) * (1.0 - share.y), share.x * (1.0 - share.y),
+                  (1.0 - share.x) * share.y, share.x * share.y);
+    float d = 0.0;
+    if (w.x > 0.0)
+        d += w.x * sz_shape_at(s00, p, half_width, light_text);
+    if (w.y > 0.0)
+        d += w.y * sz_shape_at(s10, p - vec2(1.0, 0.0), half_width, light_text);
+    if (w.z > 0.0)
+        d += w.z * sz_shape_at(s01, p - vec2(0.0, 1.0), half_width, light_text);
+    if (w.w > 0.0)
+        d += w.w * sz_shape_at(s11, p - vec2(1.0, 1.0), half_width, light_text);
+    return d;
+}
+
+// Where the coverage between the 4 nearest pixels' centres (top-left,
+// top-right, bottom-left, bottom-right, covered c) is over 0.55, a little over
+// half, at p from the top-left one's centre: that outline lies on a straight
+// edge and inside thin strokes, slanted ones too, so it joins a thin stroke
+// where the shapes leave a gap. It rounds an inside corner, so it counts only
+// as far as 'fill' says. Only ink is added: outside the outline the distance
+// falls away fast, so it never sets a floor under paper that a wide
+// antialiased border would show.
+float sz_filled(vec4 c, vec2 p, float fill) {
+    vec2 f = clamp(p, 0.0, 1.0);
+    float d = mix(-1.0, mix(mix(c.x, c.y, f.x), mix(c.z, c.w, f.x), f.y) - 0.55, fill);
+    return d < 0.0 ? 4.0 * d : d;
+}
+
+// What is drawn at p: the blended shapes, filled in the text's ink, dark or
+// light.
+float sz_drawn(SzShape s00, SzShape s10, SzShape s01, SzShape s11, vec2 p, float half_width,
+               float light_text, vec4 c, float fill) {
+    float d = sz_blend(s00, s10, s01, s11, p, half_width, light_text);
+    float dark = light_text < 1.0 ? max(d, sz_filled(c, p, fill)) : d;
+    float light = light_text > 0.0 ? min(d, -sz_filled(1.0 - c, p, fill)) : d;
+    return mix(dark, light, light_text);
 }
 
 vec4 sz_filter(vec2 uv) {
@@ -242,14 +558,34 @@ vec4 sz_filter(vec2 uv) {
 
     float cv[${SIZE * SIZE}];
     ${generateCoverage()}
-    vec4 bx = sz_bspline(f.x);
-    vec4 by = sz_bspline(f.y);
-    ${generateEdgeBlend()}
-    d += sz_weight - 0.5;
-
     // An antialiased border sz_edge screen pixels wide; one source pixel
     // spans sz_mag screen pixels.
     float half_width = clamp(0.5 * sz_edge / sz_mag, 0.01, 0.75);
+    float light_text = smoothstep(0.45, 0.65, ${mean6()});
+    ${generateShapes()}
+    vec4 c4 = vec4(${near.join(', ')});
+    // An inside corner is a corner or join some pixel's shape explains
+    // exactly; the fill between centres, which would round it, is left out
+    // there.
+    float fill = 1.0 - max(max(max(s0.use_corner, s0.use_join), max(s1.use_corner, s1.use_join)),
+                           max(max(s2.use_corner, s2.use_join), max(s3.use_corner, s3.use_join)));
+    float d = ${blendAt('vec2(0.0)')};
+    // Where neighbouring pixels' shapes leave a hairline across a stroke, the
+    // text's ink lies close on both sides of it, across or down: there it is
+    // ink too. An inside corner has ink on one side across and one side down,
+    // never both sides of one, so it stays square. The text's ink is the tone
+    // that covers less of the 6x6 pixels: dark on light, or light on a dark
+    // ground.
+    float right = ${blendAt(`vec2(${JOIN_PX}, 0.0)`)};
+    float left = ${blendAt(`vec2(${-JOIN_PX}, 0.0)`)};
+    float below = ${blendAt(`vec2(0.0, ${JOIN_PX})`)};
+    float above = ${blendAt(`vec2(0.0, ${-JOIN_PX})`)};
+    d = mix(max(d, max(min(left, right), min(above, below))),
+            min(d, min(max(left, right), max(above, below))), light_text);
+    // Bolder or thinner moves the edges of strokes; a faint pixel of
+    // antialiasing with no stroke beside it grows into nothing.
+    d += (sz_weight - 0.5) * smoothstep(0.15, 0.35, peak);
+
     vec4 sharp = mix(light, dark, smoothstep(-half_width, half_width, d));
 
     // Rebuild only text-like areas: enough contrast, sharp edges (a smooth

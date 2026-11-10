@@ -58,6 +58,20 @@ start() {
     rm -rf "$ROOT" "$RUN"
     mkdir -p "$ROOT"/{config,data/gnome-shell/extensions,cache,state} "$RUN"
     chmod 700 "$RUN"
+    # Text antialiased in gray, as GTK draws it, both what cairo draws through fontconfig and,
+    # below, GNOME's own: the machine's fontconfig may ask for subpixel antialiasing instead,
+    # whose colored fringes smoothing does not yet read as text.
+    mkdir -p "$ROOT/config/fontconfig"
+    cat > "$ROOT/config/fontconfig/fonts.conf" <<'EOF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <match target="font">
+    <edit name="rgba" mode="assign"><const>none</const></edit>
+    <edit name="lcdfilter" mode="assign"><const>lcdnone</const></edit>
+  </match>
+</fontconfig>
+EOF
 
     cp -r "$REPO/$UUID" "$ROOT/data/gnome-shell/extensions/"
     glib-compile-schemas "$ROOT/data/gnome-shell/extensions/$UUID/schemas"
@@ -81,7 +95,7 @@ echo "\$DBUS_SESSION_BUS_ADDRESS" > "$ROOT/bus"
 gsettings set org.gnome.shell enabled-extensions "['$HELPER', '$UUID']"
 gsettings set org.gnome.desktop.interface enable-animations false
 gsettings set org.gnome.desktop.interface enable-hot-corners false
-gsettings set org.gnome.desktop.interface font-antialiasing rgba
+gsettings set org.gnome.desktop.interface font-antialiasing grayscale
 gsettings set org.gnome.desktop.interface font-hinting slight
 gsettings set org.gnome.desktop.a11y.magnifier mouse-tracking proportional
 echo \$\$ > "$ROOT/pid"
