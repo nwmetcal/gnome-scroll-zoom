@@ -40,15 +40,31 @@ def zoomed(source: Box, pointer: tuple[float, float], zoom: float, screen: tuple
     )
 
 
+def viewed(source: Box, view: Box, screen: tuple[int, int]) -> Box:
+    """Where a box of the unzoomed screen lands when the full-screen zoomed view shows the
+    part `view` of it, wherever the view is."""
+    scale_x, scale_y = screen[0] / view.width, screen[1] / view.height
+    return Box(
+        (source.x - view.x) * scale_x,
+        (source.y - view.y) * scale_y,
+        source.width * scale_x,
+        source.height * scale_y,
+    )
+
+
 def inset(box: Box, margin: float) -> Box:
     """A box shrunk by a margin on every side."""
     return Box(box.x + margin, box.y + margin, box.width - 2 * margin, box.height - 2 * margin)
 
 
 def crop(image: Gray, box: Box) -> Gray:
-    """The pixels inside a box, rounded inward to whole pixels."""
+    """The pixels inside a box, rounded inward to whole pixels. A box that is not wholly on
+    the image is an error, not a smaller or empty crop, so a step never judges nothing."""
     left, top = int(np.ceil(box.x)), int(np.ceil(box.y))
     right, bottom = int(box.x + box.width), int(box.y + box.height)
+    height, width = image.shape[:2]
+    if left < 0 or top < 0 or right > width or bottom > height or right <= left or bottom <= top:
+        raise ValueError(f"{box} is not wholly on the {width} by {height} image")
     return image[top:bottom, left:right]
 
 

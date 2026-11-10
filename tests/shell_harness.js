@@ -19,6 +19,7 @@
         ctrl: Clutter.KEY_Control_L,
         shift: Clutter.KEY_Shift_L,
         backslash: Clutter.KEY_backslash,
+        return: Clutter.KEY_Return,
     };
 
     // Where the test pattern sits on screen, and what is in it, in stage pixels
@@ -131,6 +132,27 @@
             return extension().stateObj.getSettings();
         },
 
+        windows() {
+            return global.get_window_actors().map(actor => actor.meta_window.get_title());
+        },
+
+        closeWindows() {
+            for (const actor of global.get_window_actors())
+                actor.meta_window.delete(global.get_current_time());
+            return true;
+        },
+
+        // How X11 apps reach the test shell's Xwayland: its display, and the authority file
+        // that lets them in.
+        xDisplay() {
+            return {display: GLib.getenv('DISPLAY'), authority: GLib.getenv('XAUTHORITY')};
+        },
+
+        hidePattern() {
+            this._pattern?.hide();
+            return true;
+        },
+
         // A known starting point: zoom off, GNOME's level at 2x, the view
         // centred on the pointer, and the extension at its defaults.
         reset() {
@@ -145,6 +167,11 @@
             new gio.Settings({schema_id: 'org.gnome.desktop.a11y.applications'})
                 .set_boolean('screen-magnifier-enabled', false);
             Main.magnifier.setActive(false);
+            // GNOME's magnifier remembers where it last saw the pointer and skips re-centring
+            // when it comes on with the pointer still there; start each scenario as a fresh
+            // session does, so none inherits the last one's pointer.
+            Main.magnifier.xMouse = undefined;
+            Main.magnifier.yMouse = undefined;
             magnifier.set_double('mag-factor', 2.0);
             Main.overview.hide();
             for (const key of Object.keys(KEYS))
@@ -163,8 +190,10 @@
         },
 
         showPattern() {
-            if (this._pattern)
+            if (this._pattern) {
+                this._pattern.show();
                 return true;
+            }
             const area = new St.DrawingArea({
                 x: PATTERN.x, y: PATTERN.y, width: PATTERN.width, height: PATTERN.height,
             });

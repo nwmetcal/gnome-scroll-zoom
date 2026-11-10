@@ -151,6 +151,23 @@ list your version. Support for new versions is added once its tests pass on them
 </details>
 
 <details>
+<summary><b>Does it work over full-screen games, video, and virtual machines?</b></summary>
+
+Yes. Its tests zoom over full-screen apps, both newer Wayland apps and the X11 apps most
+games are, over apps that take over the keyboard's shortcuts as virtual machines and remote
+desktops do, and over apps that keep drawing, as games and video do. Two things to know:
+
+- A game that locks and hides the pointer, as first-person games do, holds the pointer in
+  one place, so zoom stays on that spot (usually the middle of the screen) while you look
+  around. The tests can't run such a game yet
+  ([issue 2](https://github.com/nwmetcal/gnome-scroll-zoom/issues/2)).
+- While zoom is on, GNOME draws a full-screen game through its own compositor instead of
+  straight to the screen, which can cost a little speed. It goes back to normal when zoom
+  turns off.
+
+</details>
+
+<details>
 <summary><b>Will it slow down my computer?</b></summary>
 
 Smoothing runs on the graphics card, and only while you're zoomed in. On the computer it's

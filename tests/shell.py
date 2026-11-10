@@ -3,6 +3,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -15,6 +16,9 @@ from tests.paths import BUILD, ROOT
 TEST_SHELL = ROOT / "dev" / "test-shell.sh"
 HARNESS = ROOT / "tests" / "shell_harness.js"
 SCREEN = (1280, 800)
+# How long the zoom must hold still to count as settled, in seconds: the extension saves the
+# level 0.4 s after a glide ends, and GNOME's rounding of it starts one more short glide.
+STILL_S = 0.8
 # The test screen refreshes as fast as the monitor this is built on, so a 60 Hz timer
 # cannot pass for following every frame.
 REFRESH_HZ = 144
@@ -64,13 +68,20 @@ class Shell:
     def start(self, *, pattern: bool = True) -> None:
         """Start the shell with the extension, load the harness, and show the test pattern."""
         width, height = SCREEN
-        subprocess.run(
-            [str(TEST_SHELL), "start", f"{width}x{height}@{REFRESH_HZ}"],
-            env=self._env(),
-            check=True,
-            capture_output=True,
-            timeout=90,
-        )
+        command = [str(TEST_SHELL), "start", f"{width}x{height}@{REFRESH_HZ}"]
+        try:
+            done = subprocess.run(
+                command, env=self._env(), capture_output=True, text=True, timeout=90
+            )
+        except subprocess.TimeoutExpired as timeout:
+            raise ShellError(
+                f"the test shell in {self.root} took over 90 s to start; its log ends:\n"
+                + self._log_tail()
+            ) from timeout
+        if done.returncode != 0:
+            raise ShellError(
+                f"the test shell in {self.root} did not start:\n{done.stdout}{done.stderr}"
+            )
         self.call(HARNESS.read_text())
         if pattern:
             self.call("return scrollZoomTest.showPattern();")
@@ -79,9 +90,25 @@ class Shell:
         """Start an app inside the shell; it keeps running until the shell stops."""
         subprocess.run([str(TEST_SHELL), "client", *command], env=self._env(), check=True)
 
-    def stop(self) -> None:
-        """Stop the shell."""
+    def stop(self) -> Path:
+        """Stop the shell and remove its root, which held its settings, keeping a copy of its
+        log, where GNOME Shell writes the extension's errors, beside its screenshots. Returns
+        where the log is kept."""
         subprocess.run([str(TEST_SHELL), "stop"], env=self._env(), check=True, timeout=30)
+        kept = self._captures() / "shell.log"
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        log = self.root / "shell.log"
+        kept.write_text(log.read_text() if log.exists() else "the shell wrote no log\n")
+        shutil.rmtree(self.root)
+        return kept
+
+    def _captures(self) -> Path:
+        """This shell's own folder under build/shots/, for its screenshots and its log."""
+        return BUILD / "shots" / self.root.name
+
+    def _log_tail(self, lines: int = 40) -> str:
+        log = self.root / "shell.log"
+        return "\n".join(log.read_text().splitlines()[-lines:]) if log.exists() else "(no log)"
 
     def call(self, body: str) -> Json:
         """Run JavaScript in the shell and return what its body returns, as JSON.
@@ -124,16 +151,20 @@ class Shell:
         self.call(f"return scrollZoomTest.run({json.dumps(steps)});")
         self.wait_until("!scrollZoomTest.busy", timeout_s)
 
-    def settle(self, timeout_s: float = 3.0) -> None:
-        """Wait until the zoom level stops changing."""
+    def settle(self, timeout_s: float = 5.0) -> None:
+        """Wait until the zoom level has stopped changing for STILL_S: longer than the
+        extension waits after a glide to save the level, which GNOME rounds and hands back,
+        a glide of its own."""
         deadline = time.monotonic() + timeout_s
         last = self.call("return scrollZoomTest.state().zoom;")
+        still_since = time.monotonic()
         while time.monotonic() < deadline:
-            time.sleep(0.15)
+            time.sleep(0.1)
             now = self.call("return scrollZoomTest.state().zoom;")
-            if now == last:
+            if now != last:
+                last, still_since = now, time.monotonic()
+            elif time.monotonic() - still_since >= STILL_S:
                 return
-            last = now
         raise ShellError("the zoom level kept changing")
 
     def state(self) -> dict[str, Json]:
@@ -143,8 +174,9 @@ class Shell:
         return value
 
     def screenshot(self, name: str) -> Path:
-        """A screenshot of the whole test screen, kept under build/shots/."""
-        out = BUILD / "shots" / f"{name}.png"
+        """A screenshot of the whole test screen, kept under build/shots/, in a folder of
+        this shell's own, so runs side by side never judge each other's captures."""
+        out = self._captures() / f"{name}.png"
         out.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run([str(TEST_SHELL), "shot", str(out)], env=self._env(), check=True, timeout=30)
         return out

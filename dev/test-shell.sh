@@ -10,7 +10,9 @@
 #   dev/test-shell.sh start [WxH]     start (or restart) the test shell
 #   dev/test-shell.sh eval 'js code'  run JavaScript inside it, print the result
 #   dev/test-shell.sh shot out.png    screenshot the whole test screen
-#   dev/test-shell.sh client cmd...   run a Wayland app inside it
+#   dev/test-shell.sh client cmd...   run an app inside it: Wayland, or X11 through Xwayland
+#                                     with the shell's DISPLAY and XAUTHORITY (see
+#                                     scrollZoomTest.xDisplay() in tests/shell_harness.js)
 #   dev/test-shell.sh log             show the shell's log
 #   dev/test-shell.sh stop
 set -euo pipefail
@@ -20,9 +22,10 @@ REPO="$(dirname "$HERE")"
 ROOT="${TEST_SHELL_ROOT:-${XDG_RUNTIME_DIR:-/tmp}/scroll-zoom-test-shell}"
 UUID=scroll-zoom@nhicc
 HELPER=test-unsafe-mode@scroll-zoom.dev
-# Wayland socket paths must stay under 108 bytes, so the runtime folder lives
-# at a short path of its own.
-RUN="${XDG_RUNTIME_DIR:-/tmp}/scroll-zoom-test"
+# Wayland socket paths must stay under 108 bytes, so the runtime folder lives at a short path
+# of its own, named for the root, so test shells with different roots run side by side, as
+# reviewers' do.
+RUN="${XDG_RUNTIME_DIR:-/tmp}/szt-$(printf '%s' "$ROOT" | sha1sum | cut -c1-10)"
 
 test_env() {
     env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \
@@ -46,6 +49,7 @@ stop() {
     fi
     # A portal started by a test app can leave a FUSE mount behind.
     fusermount3 -u -z "$RUN/doc" 2>/dev/null || fusermount -u -z "$RUN/doc" 2>/dev/null || true
+    rm -rf "$RUN"
 }
 
 start() {
@@ -81,7 +85,7 @@ gsettings set org.gnome.desktop.interface font-antialiasing rgba
 gsettings set org.gnome.desktop.interface font-hinting slight
 gsettings set org.gnome.desktop.a11y.magnifier mouse-tracking proportional
 echo \$\$ > "$ROOT/pid"
-exec gnome-shell --headless --wayland --no-x11 --wayland-display wayland-test --virtual-monitor $size
+exec gnome-shell --headless --wayland --wayland-display wayland-test --virtual-monitor $size
 EOF
     chmod +x "$ROOT/launch.sh"
     test_env setsid dbus-run-session -- "$ROOT/launch.sh" > "$ROOT/shell.log" 2>&1 &
@@ -95,6 +99,12 @@ EOF
                 'Main.overview.hide(); "ok"' > /dev/null
             echo "Test shell running ($size). Log: $ROOT/shell.log"
             return 0
+        fi
+        # A shell that has exited will not come up; say why now rather than at the timeout.
+        if [[ -s "$ROOT/pid" ]] && ! kill -0 "$(cat "$ROOT/pid")" 2>/dev/null; then
+            echo "Test shell exited. Log:" >&2
+            tail -40 "$ROOT/shell.log" >&2
+            return 1
         fi
         sleep 0.2
     done
@@ -121,5 +131,5 @@ client)
     test_env setsid "$@" >> "$ROOT/client.log" 2>&1 &
     ;;
 log) cat "$ROOT/shell.log" ;;
-*) sed -n '2,15p' "$0"; exit 1 ;;
+*) sed -n '3,/^set -euo pipefail/{/^set -euo pipefail/!p}' "$0"; exit 1 ;;
 esac
