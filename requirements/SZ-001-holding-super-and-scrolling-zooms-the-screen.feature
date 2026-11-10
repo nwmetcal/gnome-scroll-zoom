@@ -14,7 +14,7 @@ Feature: SZ-001 Holding Super and scrolling zooms the screen
   the view sits; under GNOME's other tracking, such as its default, "proportional", the view
   sits where that tracking puts it. Each pointer here is clear of the edges at the zoom its
   scenario reaches; the slow spin's, near a corner, is one the view can centre on only once
-  zoom passes 3x, which takes that spin more than a second.
+  zoom passes 3.2x, which takes that spin more than a second.
 
   Scenario: Super and the wheel turn zoom on
     Given zoom is off
@@ -63,6 +63,7 @@ Feature: SZ-001 Holding Super and scrolling zooms the screen
     When Super is held and the wheel turns 8 notches up, 250 ms apart
     Then zoom is on
     And the zoomed view is centred on the pointer, within 2 pixels
+    And on every frame of the spin the view was where centred tracking puts it, within 2 pixels
 
   Scenario: GNOME's zoom toggle comes on around the pointer
     Given zoom is off

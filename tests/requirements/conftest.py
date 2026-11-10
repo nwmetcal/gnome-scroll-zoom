@@ -94,8 +94,12 @@ def held(keys: str) -> list[str]:
     return [KEY_NAMES.get(word, word) for word in words]
 
 
+# How far apart a quick spin's notches come, as a person spinning a wheel turns them.
+QUICK_GAP_MS = 60
+
+
 def wheel_steps(
-    keys: list[str], notches: int, direction: str, gap_ms: int = 60
+    keys: list[str], notches: int, direction: str, gap_ms: int = QUICK_GAP_MS
 ) -> list[list[Json]]:
     sign = 1 if direction == "up" else -1
     steps: list[list[Json]] = [step(20, "press", key) for key in keys]
@@ -134,12 +138,18 @@ def keys_to_hold(shell: Shell, keys: str) -> None:
     )
 )
 def hold_and_turn(
-    shell: Shell, keys: str, notches: str, direction: str, gap_ms: str | None
+    shell: Shell, scene: Scene, keys: str, notches: str, direction: str, gap_ms: str | None
 ) -> None:
-    gap = int(gap_ms) if gap_ms else 60
-    shell.run_steps(wheel_steps(held(keys), int(notches), direction, gap), timeout_s=30)
+    # Every frame drawn while the wheel turns and the zoom settles, for steps that judge
+    # the whole spin.
+    shell.call("return scrollZoomTest.record();")
+    steps = wheel_steps(held(keys), int(notches), direction, int(gap_ms or QUICK_GAP_MS))
+    shell.run_steps(steps, timeout_s=30)
     time.sleep(0.2)
     shell.settle()
+    frames = shell.call("return scrollZoomTest.stopRecording();")
+    assert isinstance(frames, list)
+    scene.frames = [frame for frame in frames if isinstance(frame, dict)]
 
 
 @when(parsers.parse("the wheel turns {notches:d} notches {direction} with no key held"))

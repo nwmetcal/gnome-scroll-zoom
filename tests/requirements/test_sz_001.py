@@ -5,8 +5,8 @@ import time
 
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from tests.requirements.conftest import held
-from tests.shell import Json, Shell, number, step
+from tests.requirements.conftest import Scene, held
+from tests.shell import SCREEN, Json, Shell, number, step
 
 scenarios("SZ-001-holding-super-and-scrolling-zooms-the-screen.feature")
 
@@ -46,6 +46,32 @@ def centred_on_pointer(shell: Shell, tolerance: int) -> None:
     assert isinstance(view, list) and isinstance(pointer, list)
     off = max(abs(number(view[i]) - number(pointer[i])) for i in range(2))
     assert off <= tolerance, f"the view is centred on {view}, the pointer is at {pointer}"
+
+
+@then(
+    parsers.parse(
+        "on every frame of the spin the view was where centred tracking puts it,"
+        " within {tolerance:d} pixels"
+    )
+)
+def followed_every_frame(scene: Scene, tolerance: int) -> None:
+    # Centred tracking puts the view's middle on the pointer, moved in from the screen's
+    # edges as far as the view's own size needs.
+    width, height = SCREEN
+    worst = 0.0
+    judged = 0
+    for frame in scene.frames:
+        if frame["on"] is not True:
+            continue
+        roi, pointer = frame["roi"], frame["pointer"]
+        assert isinstance(roi, list) and isinstance(pointer, list)
+        x, y, w, h = (number(v) for v in roi)
+        want_x = min(max(number(pointer[0]), w / 2), width - w / 2)
+        want_y = min(max(number(pointer[1]), h / 2), height - h / 2)
+        worst = max(worst, abs(x + w / 2 - want_x), abs(y + h / 2 - want_y))
+        judged += 1
+    assert judged > 10, f"only {judged} frames were drawn with zoom on"
+    assert worst <= tolerance, f"a frame of the spin had the view {worst:.1f} pixels off"
 
 
 @then("the Activities overview is closed")
