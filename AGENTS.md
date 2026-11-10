@@ -139,7 +139,7 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | No words that sell, no tool or model names, no emoji | `tests/style/test_words.py` |
 | No tracked file over 1 MB | `tests/style/test_sizes.py` |
 | A step crops only boxes wholly on its screenshot, so it never judges an empty crop | `crop` in `tests/images.py`, held by `tests/unit/test_images.py` |
-| The `@shell` scenarios pass with test shells side by side, as a review round runs them | the `deliver` skill's Prove step: two `make test-shell` runs at once when the shell or its steps change |
+| The `@shell` scenarios pass with test shells side by side, as a review round runs them | the `deliver` skill's Prove step: two `make test-shell` runs at once when the extension, the test shell, its harness, or a `@shell` step changes |
 | Every image in the README and the project page has alt text | `tests/style/test_pages.py` |
 | A release's tag matches the extension's `version-name` | the `release` workflow |
 | The pages work for low vision: animation once with a still, reflow at 400%, nothing by color alone | review: the rules lens |

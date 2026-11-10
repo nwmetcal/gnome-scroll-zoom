@@ -275,8 +275,10 @@ export default class ScrollZoomExtension extends Extension {
                     yMagFactor: factor,
                     // A glide the wheel or touchpad started stays on the pointer all the
                     // way. GNOME's own following lasts a second after zoom comes on, so a
-                    // slow spin would otherwise settle where the view was then. Keyboard
-                    // zoom keeps GNOME's way, which hands over to focus tracking.
+                    // slow spin would otherwise settle where the view was then. A level that
+                    // comes in through setMagFactor, from keyboard zoom, the Settings slider,
+                    // or GNOME handing back this extension's own save, keeps GNOME's way,
+                    // which hands over to focus tracking.
                     redoCursorTracking: this._followPointer || region._followingCursor,
                     animate: false,
                 });
