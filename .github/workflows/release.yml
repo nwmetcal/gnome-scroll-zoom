@@ -29,13 +29,45 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           {
-            echo "Download **scroll-zoom.shell-extension.zip** below, then follow the steps in the [README](https://github.com/nwmetcal/gnome-scroll-zoom#install):"
+            echo "To get Scroll Zoom and every update after it, install it from extensions.gnome.org, as the [README](https://github.com/nwmetcal/gnome-scroll-zoom#install) says."
+            echo
+            echo "To install this version by hand instead, download **scroll-zoom.shell-extension.zip** below and run:"
             echo
             echo '```bash'
             echo 'gnome-extensions install --force ~/Downloads/scroll-zoom.shell-extension.zip'
             echo '```'
             echo
-            echo "Log out and back in, then switch on Scroll Zoom in the Extensions app. Needs GNOME 50."
+            echo "Log out and back in, then switch on Scroll Zoom in the Extensions app. Needs GNOME 50. A copy installed this way never updates itself."
           } > build/notes.md
           gh release create "$GITHUB_REF_NAME" build/scroll-zoom.shell-extension.zip \
             --title "Scroll Zoom $GITHUB_REF_NAME" --notes-file build/notes.md --verify-tag
+
+  # Once the owner has set the account on extensions.gnome.org, the repository variable
+  # EGO_USERNAME and the secret EGO_PASSWORD in the extensions-gnome-org environment, the bundle
+  # the release published goes there for review. Once it is approved, GNOME updates everyone who
+  # installed from there (decision 0007). Without the variable, this job is skipped.
+  ego:
+    needs: release
+    if: vars.EGO_USERNAME != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: extensions-gnome-org
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch the bundle the release published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --pattern scroll-zoom.shell-extension.zip --dir build
+      - name: Upload it to extensions.gnome.org for review
+        env:
+          EGO_USERNAME: ${{ vars.EGO_USERNAME }}
+          EGO_PASSWORD: ${{ secrets.EGO_PASSWORD }}
+        # --accept-terms makes, in the account's name, the two statements the upload page asks
+        # for, which STATEMENTS in tools/ego.py lists.
+        run: python3 -m tools.ego upload build/scroll-zoom.shell-extension.zip --accept-terms
