@@ -248,7 +248,8 @@ def undone(text: str) -> list[str]:
     a form it does not read. It reads the file, not which method runs when, so an undo
     anywhere in the file counts."""
     code = code_only(text)
-    flat = re.sub(r"\s+", "", code)
+    # An undo is looked for in code: a string that holds a call is text, not an undo.
+    flat = re.sub(r"\s+", "", without_calls_in_strings(text, code))
     found: list[str] = []
     read: set[int] = set()
     for call, undo, what, never in (
@@ -375,18 +376,111 @@ SOURCE_WORD = re.compile(r"\w+_add\w*|\w+_source_new\w*|attach|setTimeout|setInt
 KEY_WORD = re.compile(r"(?!remove)[a-z]\w*(?i:keybinding)\w*|grab\w*(?i:accelerator)\w*")
 
 
+# Words after which a / starts a regex literal rather than a division.
+REGEX_AFTER_WORDS = {
+    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case",
+    "do", "else", "yield", "await",
+}  # fmt: skip
+
+
+def literals(text: str) -> list[tuple[str, int, int]]:
+    """Each comment, string, template text, and regex literal in a JavaScript file, as its
+    kind and the span of its whole text. A template's ${...} parts are code, and read as code."""
+    spans: list[tuple[str, int, int]] = []
+    templates: list[int] = []
+    depth, last, word, index = 0, "", "", 0
+    while index < len(text):
+        char = text[index]
+        if text.startswith("//", index):
+            end = text.find("\n", index)
+            end = len(text) if end < 0 else end
+            spans.append(("comment", index, end))
+            index = end
+            continue
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            end = len(text) if end < 0 else end + 2
+            spans.append(("comment", index, end))
+            index = end
+            continue
+        if char in "'\"":
+            end = _closing(text, index + 1, char)
+            spans.append(("string", index, end))
+            index, last, word = end, "a", ""
+            continue
+        if char == "`" or (char == "}" and templates and templates[-1] == depth):
+            if char == "}":
+                templates.pop()
+            end = index + 1
+            while end < len(text) and text[end] != "`" and not text.startswith("${", end):
+                end += 2 if text[end] == "\\" else 1
+            if text.startswith("${", end):
+                spans.append(("template", index, end + 2))
+                templates.append(depth)
+                index, last, word = end + 2, "(", ""
+            else:
+                spans.append(("template", index, min(end + 1, len(text))))
+                index, last, word = end + 1, "a", ""
+            continue
+        if char == "/" and (
+            not last or last in "(,=:[!&|?{};+-*%<>~^" or word in REGEX_AFTER_WORDS
+        ):
+            end = _regex_end(text, index + 1)
+            spans.append(("regex", index, end))
+            index, last, word = end, "a", ""
+            continue
+        depth += {"{": 1, "}": -1}.get(char, 0)
+        if not char.isspace():
+            word = word + char if char.isalnum() or char in "_$" else ""
+            last = char
+        index += 1
+    return spans
+
+
+def _closing(text: str, index: int, quote: str) -> int:
+    while index < len(text) and text[index] not in (quote, "\n"):
+        index += 2 if text[index] == "\\" else 1
+    return min(index + 1, len(text))
+
+
+def _regex_end(text: str, index: int) -> int:
+    in_class = False
+    while index < len(text) and text[index] != "\n":
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "/" and not in_class:
+            index += 1
+            break
+        in_class = (in_class or char == "[") and char != "]"
+        index += 1
+    while index < len(text) and text[index].isalpha():
+        index += 1
+    return index
+
+
+def without_calls_in_strings(text: str, code: str) -> str:
+    """The code with each string or template text that holds a parenthesis blanked."""
+    chars = list(code)
+    for kind, start, end in literals(text):
+        if kind in ("string", "template") and "(" in text[start:end]:
+            for index in range(start, end):
+                if chars[index] != "\n":
+                    chars[index] = " "
+    return "".join(chars)
+
+
 def code_only(text: str, strings: bool = True) -> str:
-    """The text with each comment blanked, and each string's contents too unless strings,
-    keeping every offset and line where it was."""
-
-    def blank(m: re.Match[str]) -> str:
-        found = m.group(0)
-        if found.startswith("/"):
-            return re.sub(r"[^\n]", " ", found)
-        return found if strings else found[0] + re.sub(r"[^\n]", " ", found[1:-1]) + found[-1]
-
-    pattern = r"""'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`|//[^\n]*|/\*.*?\*/"""
-    return re.sub(pattern, blank, text, flags=re.S)
+    """The text with each comment and regex literal blanked, and each string's and template
+    text's contents too unless strings, keeping every offset and line where it was."""
+    chars = list(text)
+    for kind, start, end in literals(text):
+        if kind in ("comment", "regex") or not strings:
+            for index in range(start, end):
+                if chars[index] != "\n":
+                    chars[index] = " "
+    return "".join(chars)
 
 
 def unread(text: str, code: str, read: set[int], held: dict[str, int]) -> list[str]:
@@ -395,26 +489,32 @@ def unread(text: str, code: str, read: set[int], held: dict[str, int]) -> list[s
     before .call included; each use of a name holding get_laters() but its assignment and its
     .add( and .remove( calls; and each escape in a name, which hides the word."""
     found: list[str] = []
+    bare = code_only(text, strings=False)
+    words = [(m.start(), m.group(0)) for m in re.finditer(r"(?<![\w$])[A-Za-z$][\w$]*", bare)]
+    # A string or a template's text names a call when it holds only that name, as obj['name'].
+    for kind, start, end in literals(text):
+        inner = text[start + 1 : end - (2 if text.endswith("${", 0, end) else 1)]
+        if kind in ("string", "template") and re.fullmatch(r"[A-Za-z$][\w$]*", inner):
+            words.append((start + 1, inner))
     # A name that starts with an underscore is a private member, the extension's own or GNOME
     # Shell's; none that connects, adds a source, or binds a key is named so.
-    for m in re.finditer(r"(?<![\w$])[A-Za-z$][\w$]*", code):
-        word = m.group(0)
-        if m.start() in read:
+    for offset, word in words:
+        if offset in read:
             continue
         if SIGNAL_WORD.search(word):
-            found.append(f"a signal this check cannot read: {line_of(text, m.start())}")
+            found.append(f"a signal this check cannot read: {line_of(text, offset)}")
         if SOURCE_WORD.fullmatch(word) or word == "get_laters":
-            found.append(f"a main loop source this check cannot read: {line_of(text, m.start())}")
+            found.append(f"a main loop source this check cannot read: {line_of(text, offset)}")
         if KEY_WORD.fullmatch(word):
-            found.append(f"a key binding this check cannot read: {line_of(text, m.start())}")
+            found.append(f"a key binding this check cannot read: {line_of(text, offset)}")
     for name, assigned in held.items():
-        for m in re.finditer(rf"(?<![\w$.]){re.escape(name)}(?![\w$])", code):
-            used = re.match(rf"{DOT}(?:add|remove){OPEN}", code[m.end() :]) is not None
+        for m in re.finditer(rf"(?<![\w$.]){re.escape(name)}(?![\w$])", bare):
+            used = re.match(rf"{DOT}(?:add|remove){OPEN}", bare[m.end() :]) is not None
             if m.start() != assigned and not used:
                 found.append(
                     f"a main loop source this check cannot read: {line_of(text, m.start())}"
                 )
-    for m in re.finditer(r"\\u", code_only(text, strings=False)):
+    for m in re.finditer(r"\\u", bare):
         found.append(f"a name this check cannot read: {line_of(text, m.start())}")
     return found
 
@@ -496,11 +596,28 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "this._l = global.display.get_compositor().get_laters().add(0, f);": (
             "a main loop source this check cannot read"
         ),
+        # A regex literal that holds // or /* is not a comment, and hides no code after it.
+        "this._base = p.replace(/\\/*$/, '');\nthis._id = global.stage.connect('x', f);\n/* a */": (
+            "global.stage is never disconnected from this._id"
+        ),
+        "if (/^https?:\\/\\//.test(u)) this._id = global.stage.connect('x', f);": (
+            "global.stage is never disconnected from this._id"
+        ),
+        "x = `${global.stage.connect('x', f)}`;": "a signal whose id is not kept",
+        "global.stage[`connect`]('x', f);": "a signal this check cannot read",
+        "this._id = global.stage.connect('x', f);\nlog('global.stage.disconnect(this._id)');": (
+            "global.stage is never disconnected from this._id"
+        ),
     }
     for code, problem in left.items():
         assert any(problem in found for found in undone(code)), (code, undone(code))
     clean = """
         // connects the stage, then subscribes; a comment is not a call
+        const pattern = /connect|\\/\\*/;
+        const half = width / 2 / scale;
+        const label = `a ${half / 2} b`;
+        this._client_id = this._client.connect('notify::connected', f);
+        this._client.disconnect(this._client_id);
         Gio.bus_unwatch_name(this._watch);
         this._spacedLater = global.compositor.get_laters ().add(0, f);
         global.compositor.get_laters().remove(this._spacedLater);
