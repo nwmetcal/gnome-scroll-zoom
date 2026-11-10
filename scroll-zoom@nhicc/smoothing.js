@@ -112,9 +112,10 @@ function generateCoverage() {
 // shared with a neighbour across a band SHARED_PX source pixels wide,
 // centred on their common edge.
 const SHARED_PX = 0.3;
+// The 4 source pixels around the sample point, in the coverage block.
+const near = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([i, j]) => `cv[${block(i, j)}]`);
 
 function generateShapes() {
-    const near = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([i, j]) => `cv[${block(i, j)}]`);
     let code = 'float d = 0.0; float steepest = 0.0; float g = 0.0;\n';
     code += `float peak = max(max(${near[0]}, ${near[1]}), max(${near[2]}, ${near[3]}));\n`;
     code += `vec2 share = clamp((f - 0.5) / ${SHARED_PX.toFixed(2)} + 0.5, 0.0, 1.0);\n`;
@@ -432,6 +433,13 @@ vec4 sz_filter(vec2 uv) {
     // spans sz_mag screen pixels.
     float half_width = clamp(0.5 * sz_edge / sz_mag, 0.01, 0.75);
     ${generateShapes()}
+    // Where the coverage between the 4 nearest pixels' centres is more than
+    // half, it is ink: that half-ink outline lies on a straight edge and inside
+    // thin strokes and outer corners, and fills inside corners only a little,
+    // where strokes join, so no joint the shapes leave a hairline gap in comes
+    // apart.
+    float between = mix(mix(${near[0]}, ${near[1]}, f.x), mix(${near[2]}, ${near[3]}, f.x), f.y);
+    d = max(d, between - 0.55);
     // Bolder or thinner moves the edges of strokes; a faint pixel of
     // antialiasing with no stroke beside it grows into nothing.
     d += (sz_weight - 0.5) * smoothstep(0.15, 0.35, peak);
