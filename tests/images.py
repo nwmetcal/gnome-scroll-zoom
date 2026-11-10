@@ -93,6 +93,90 @@ def best_shift(a: Gray, b: Gray, reach: int = 8) -> tuple[int, int]:
     return best[1], best[2]
 
 
+def ink(pixels: Gray) -> Gray:
+    """How much ink each pixel carries, from 0 at the area's lightest tone (the paper) to 1 at
+    its darkest (the ink)."""
+    low, high = float(pixels.min()), float(pixels.max())
+    if high - low < 1e-6:
+        return np.zeros_like(pixels)
+    return (high - pixels) / (high - low)
+
+
+def ink_amount(pixels: Gray) -> float:
+    """All the ink an area carries: how far each pixel is below the area's lightest tone,
+    summed, so a stroke drawn heavier or wider carries more."""
+    return float((pixels.max() - pixels).sum())
+
+
+def _rise(profile: Gray) -> float:
+    """Where a profile of ink first reaches half, in pixels from the start of its first
+    pixel, between pixel centres."""
+    for k in range(1, len(profile)):
+        before, after = float(profile[k - 1]), float(profile[k])
+        if before < 0.5 <= after:
+            return k - 0.5 + (0.5 - before) / (after - before)
+    raise ValueError("the ink never reaches half")
+
+
+def _at(t: Gray, x: float, y: float) -> float:
+    """Ink at a point between pixel centres, from the four around it."""
+    height, width = t.shape
+    left, top = int(np.floor(x - 0.5)), int(np.floor(y - 0.5))
+    fx, fy = x - 0.5 - left, y - 0.5 - top
+
+    def pixel(i: int, j: int) -> float:
+        return float(t[min(max(j, 0), height - 1), min(max(i, 0), width - 1)])
+
+    return (
+        pixel(left, top) * (1 - fx) * (1 - fy)
+        + pixel(left + 1, top) * fx * (1 - fy)
+        + pixel(left, top + 1) * (1 - fx) * fy
+        + pixel(left + 1, top + 1) * fx * fy
+    )
+
+
+def corner_gaps(t: Gray) -> list[float]:
+    """For one dark rectangle on paper, as ink (see `ink`): how far in from where each pair of
+    its edges meet its ink first reaches half, along the corner's diagonal, in pixels. A
+    right angle drawn crisply has its half-ink outline through that point, so near 0; a corner
+    rounded to a radius r is r times 0.41 in."""
+    columns = np.nonzero(t.max(axis=0) >= 0.5)[0]
+    rows = np.nonzero(t.max(axis=1) >= 0.5)[0]
+    if len(columns) < 3 or len(rows) < 3:
+        raise ValueError("no rectangle of ink to measure")
+    # Each edge is found along lines through the rectangle's middle, away from its corners.
+    across = range(
+        columns[0] + int(0.35 * len(columns)), columns[0] + max(int(0.65 * len(columns)), 1)
+    )
+    down = range(rows[0] + int(0.35 * len(rows)), rows[0] + max(int(0.65 * len(rows)), 1))
+    height, width = t.shape
+    top = float(np.mean([_rise(t[:, x]) for x in across]))
+    bottom = height - float(np.mean([_rise(t[::-1, x]) for x in across]))
+    left = float(np.mean([_rise(t[y, :]) for y in down]))
+    right = width - float(np.mean([_rise(t[y, ::-1]) for y in down]))
+    reach = float(min(len(columns), len(rows))) / 2
+    gaps: list[float] = []
+    for x, inward_x in ((left, 1), (right, -1)):
+        for y, inward_y in ((top, 1), (bottom, -1)):
+            steps = np.arange(0.0, reach, 0.05)
+            inside = [
+                s
+                for s in steps
+                if _at(t, x + inward_x * s / np.sqrt(2), y + inward_y * s / np.sqrt(2)) >= 0.5
+            ]
+            gaps.append(float(inside[0]) if inside else reach)
+    return gaps
+
+
+def shrunk(pixels: Gray, zoom: int) -> Gray:
+    """A zoomed view shrunk back to the size it was zoomed from: each pixel the mean of the
+    zoom-by-zoom block it was drawn as."""
+    height, width = pixels.shape
+    if height % zoom or width % zoom:
+        raise ValueError(f"{width} by {height} is not whole blocks of {zoom}")
+    return pixels.reshape(height // zoom, zoom, width // zoom, zoom).mean(axis=(1, 3))
+
+
 def blocks_uniform(pixels: Gray, size: int) -> float:
     """The largest spread of values inside any whole size-by-size block, aligned to the grid
     the blocks start on; 0 when every block is one flat color."""

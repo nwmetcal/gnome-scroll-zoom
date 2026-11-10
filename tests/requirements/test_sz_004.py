@@ -2,11 +2,28 @@
 """SZ-004: zoomed text and lines are drawn sharp."""
 
 import numpy as np
-from pytest_bdd import parsers, scenarios, then, when
+from pytest_bdd import given, parsers, scenarios, then, when
 
-from tests.images import best_shift, crop, in_between_fraction, inset
-from tests.requirements.conftest import Scene, capture, pattern_box, set_style
-from tests.shell import Shell
+from tests.images import (
+    Box,
+    best_shift,
+    corner_gaps,
+    crop,
+    in_between_fraction,
+    ink,
+    ink_amount,
+    inset,
+    shrunk,
+)
+from tests.requirements.conftest import (
+    PATTERN_PARTS,
+    Scene,
+    capture,
+    pattern,
+    pattern_box,
+    set_style,
+)
+from tests.shell import Shell, number
 
 scenarios("SZ-004-zoomed-text-and-lines-are-drawn-sharp.feature")
 
@@ -15,6 +32,14 @@ STYLES = {
     "soft smoothing": "soft",
     "GNOME's standard scaling": "standard",
 }
+# The harness draws each stem one pixel wide.
+STEM_WIDTH = 1.0
+
+
+@given("the test pattern is captured unzoomed")
+def captured_unzoomed(shell: Shell, scene: Scene) -> None:
+    assert shell.state()["on"] is False
+    capture(shell, scene, "unzoomed")
 
 
 @when(parsers.parse("the zoomed screen is captured with {first} and with {second}"))
@@ -22,6 +47,12 @@ def captured_with(shell: Shell, scene: Scene, first: str, second: str) -> None:
     for name in (first, second):
         set_style(shell, STYLES[name])
         capture(shell, scene, STYLES[name])
+
+
+@when("the zoomed screen is captured with sharp smoothing")
+def captured_sharp(shell: Shell, scene: Scene) -> None:
+    set_style(shell, "text")
+    capture(shell, scene, "text")
 
 
 @then(
@@ -50,3 +81,53 @@ def line_up(shell: Shell, scene: Scene) -> None:
     box = scene.on_screen(pattern_box(shell))
     shift = best_shift(crop(scene.image("standard"), box), crop(scene.image("text"), box))
     assert shift == (0, 0), f"shifted by {shift}"
+
+
+@then(parsers.parse("every corner of the two stems is within {most:g} pixel of a right angle"))
+def stems_square(shell: Shell, scene: Scene, most: float) -> None:
+    whole = pattern(shell)
+    stems = whole["stems"]
+    assert isinstance(stems, dict)
+    for name in ("fullStem", "splitStem"):
+        stem = Box(
+            number(whole["x"]) + number(whole[name]),
+            number(whole["y"]) + number(stems["y"]),
+            STEM_WIDTH,
+            number(stems["height"]),
+        )
+        # With a pixel of paper around it, short of the other stem.
+        around = inset(scene.on_screen(stem), -scene.zoom)
+        gaps = corner_gaps(ink(crop(scene.image("text"), around)))
+        assert max(gaps) <= most, f"{name}: corners {', '.join(f'{g:.1f}' for g in gaps)} pixels in"
+
+
+@then(
+    parsers.parse(
+        "the {part} carries within {most:g} percent of the ink it carries with GNOME's scaling"
+    )
+)
+def keeps_weight(shell: Shell, scene: Scene, part: str, most: float) -> None:
+    box = scene.on_screen(pattern_box(shell, PATTERN_PARTS[part]))
+    sharp = ink_amount(crop(scene.image("text"), box))
+    standard = ink_amount(crop(scene.image("standard"), box))
+    change = (sharp / standard - 1) * 100
+    assert abs(change) <= most, f"{change:+.1f} percent of the ink with GNOME's scaling"
+
+
+@then(
+    parsers.parse(
+        "shrunk back to its unzoomed size, the {part} keeps each pixel's ink within {most:g}"
+        " percent on average"
+    )
+)
+def keeps_each_pixel(shell: Shell, scene: Scene, part: str, most: float) -> None:
+    source = pattern_box(shell, PATTERN_PARTS[part])
+    unzoomed = crop(scene.image("unzoomed"), source)
+    back = shrunk(crop(scene.image("text"), scene.on_screen(source)), round(scene.zoom))
+    paper, darkest = float(unzoomed.max()), float(unzoomed.min())
+    before = (paper - unzoomed) / (paper - darkest)
+    after = (paper - back) / (paper - darkest)
+    # Over the pixels with ink in either, so the paper around the text dilutes nothing.
+    inked = (before > 0.05) | (after > 0.05)
+    error = float(np.abs(after - before)[inked].mean()) * 100
+    assert error <= most, f"each pixel's ink off by {error:.1f} percent on average"

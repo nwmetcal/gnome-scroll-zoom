@@ -25,10 +25,11 @@
     // Where the test pattern sits on screen, and what is in it, in stage pixels
     // from its top-left corner.
     const PATTERN = {
-        x: 600, y: 300, width: 120, height: 110,
+        x: 600, y: 300, width: 120, height: 130,
         text: {x: 8, y: 4, width: 104, height: 44},
         fullStem: 12, splitStem: 15.5, stems: {y: 56, height: 40},
         gradient: {x: 30, y: 56, width: 64, height: 40},
+        serif: {x: 8, y: 104, width: 104, height: 22},
     };
 
     const extension = () => Main.extensionManager.lookup(UUID);
@@ -213,6 +214,14 @@
                 cr.rectangle(PATTERN.fullStem, PATTERN.stems.y, 1, PATTERN.stems.height);
                 cr.rectangle(PATTERN.splitStem, PATTERN.stems.y, 1, PATTERN.stems.height);
                 cr.fill();
+                // Serif capitals, with upright strokes the font draws thick, and bars and
+                // serifs it draws thin.
+                const serif = PangoCairo.create_layout(cr);
+                serif.set_font_description(
+                    Pango.FontDescription.from_string('Liberation Serif 15px'));
+                serif.set_text('THE HILL', -1);
+                cr.moveTo(PATTERN.serif.x, PATTERN.serif.y);
+                PangoCairo.show_layout(cr, serif);
                 const {x, y, width, height} = PATTERN.gradient;
                 for (let i = 0; i < width; i++) {
                     const v = 1 - i / (width - 1);
