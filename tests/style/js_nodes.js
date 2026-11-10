@@ -6,11 +6,17 @@
 //
 // SOURCES.json holds a list of JavaScript sources. This prints a list with one entry for
 // each: a list of [kind, line, column] for every leaf the parser places, or the parser's
-// error. Lines and columns count from 1.
+// error. Lines and columns count from 1, and a column counts UTF-16 code units.
 
 import GLib from 'gi://GLib';
 
 const LEAVES = new Set(['Identifier', 'ThisExpression', 'Super', 'Literal']);
+// gjs 1.80 counts columns from 0, and gjs 1.88 from 1: take this gjs's own first column.
+const ORIGIN = Reflect.parse('x;').body[0].loc.start.column;
+
+function place(kind, loc) {
+    return [kind, loc.start.line, loc.start.column - ORIGIN + 1];
+}
 
 function kindOf(node) {
     if (node.type !== 'Literal')
@@ -25,17 +31,17 @@ function walk(node, found) {
         return;
     if (node.type === 'TemplateLiteral') {
         if (node.loc)
-            found.push(['template', node.loc.start.line, node.loc.start.column]);
+            found.push(place('template', node.loc));
         for (const element of node.elements) {
             if (element.type === 'Literal' && typeof element.value === 'string')
-                found.push(['template', element.loc.start.line, element.loc.start.column]);
+                found.push(place('template', element.loc));
             else
                 walk(element, found);
         }
         return;
     }
     if (node.loc && LEAVES.has(node.type))
-        found.push([kindOf(node), node.loc.start.line, node.loc.start.column]);
+        found.push(place(kindOf(node), node.loc));
     for (const [key, value] of Object.entries(node)) {
         if (key === 'loc')
             continue;

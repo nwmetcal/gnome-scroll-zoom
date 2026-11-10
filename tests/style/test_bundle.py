@@ -340,8 +340,9 @@ def sources(
     # A name held on another object, such as this._state.laters, is not read.
     held = [
         m
-        for m in re.finditer(rf"(?<![\w$.])((?:this\.)?\w+)\s*=\s*{laters}(?!\s*[.?\[])", code)
-        if not re.search(r"\.\s*$", code[: m.start(1)])
+        for m in re.finditer(rf"(?<![\w$.])((?:this\.)?\w+)\s*=\s*{laters}(?=\s*(?:;|\n|$))", code)
+        # Not after a dot, nor a second name in a chained assignment.
+        if not re.search(r"(?:\.|(?<![=!<>])=)\s*$", code[: m.start(1)])
     ]
     names = [m.group(1) for m in held]
     read = {m.start("laters") for m in held}
@@ -570,8 +571,11 @@ def misread(text: str, nodes: list[list[str | int]] | str) -> list[str]:
     starts = {start: kind for kind, start, _ in spans}
     lines = [0, *(index + 1 for index, char in enumerate(text) if char == "\n")]
     found: list[str] = []
+    regexes: set[int] = set()
     for kind, line, column in nodes:
-        offset = lines[int(line) - 1] + int(column) - 1
+        offset = _offset(text, lines[int(line) - 1], int(column))
+        if kind == "regex":
+            regexes.add(offset)
         if kind != "code":
             # The parser gives a template with no ${...} as a string.
             plain = kind == "string" and text[offset : offset + 1] == "`"
@@ -580,7 +584,20 @@ def misread(text: str, nodes: list[list[str | int]] | str) -> list[str]:
             agrees = not any(start <= offset < end for _, start, end in spans)
         if not agrees:
             found.append(f"a line this check cannot read: {line_of(text, offset)}")
+    # And each regex the scanner starts where the parser starts none: it divides there.
+    for kind, start, _ in spans:
+        if kind == "regex" and start not in regexes:
+            found.append(f"a line this check cannot read: {line_of(text, start)}")
     return found
+
+
+def _offset(text: str, line_start: int, column: int) -> int:
+    """The offset in text of a column on a line, which gjs counts in UTF-16 code units."""
+    units, index = 1, line_start
+    while units < column and index < len(text) and text[index] != "\n":
+        units += 2 if ord(text[index]) > 0xFFFF else 1
+        index += 1
+    return index
 
 
 def parse(sources: list[str]) -> list[list[list[str | int]] | str]:
@@ -718,6 +735,20 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "const r = this._size.in / 2; this._id = global.stage.connect('x', f);": (
             "global.stage is never disconnected from this._id"
         ),
+        # A regex only the scanner sees, where JavaScript divides, may end in a comment.
+        "this._id = s.connect('x', f);\nconst x = {} / [] // s.disconnect(this._id)": (
+            "this check cannot read"
+        ),
+        "this._id = s.connect('x', f);\nconst x = n++ /* c */ / [] // s.disconnect(this._id)": (
+            "this check cannot read"
+        ),
+        # get_laters() held only in a full statement of its own.
+        "this._l = (this._laters = global.compositor.get_laters()).add(0, f);": (
+            "a main loop source this check cannot read"
+        ),
+        "const x = this._laters = global.compositor.get_laters();\nthis._l = x.add(0, f);": (
+            "a main loop source this check cannot read"
+        ),
         # allowKeybinding changes the modes a key of GNOME's runs in, until it is set back.
         "Main.wm.allowKeybinding('switch-applications', Shell.ActionMode.ALL);": (
             "a key binding this check cannot read"
@@ -728,6 +759,7 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
     clean = """
         // connects the stage, then subscribes; a comment is not a call
         const keybindings = ['a', 'b'];
+        const wide = '\U0001d465'; const narrow = 'a';
         const connected = true;
         this._held = global.compositor.get_laters();
         this._heldLater = this._held.add(0, f);
@@ -845,3 +877,8 @@ def test_a_bare_or_borrowed_name_fails() -> None:
     sources: list[str] = list(BARE)
     missed = [source for source, found in zip(sources, checked(sources), strict=True) if not found]
     assert not missed, "\n".join(missed)
+
+
+def test_the_parser_counts_columns_from_one() -> None:
+    # gjs 1.80 counts them from 0, and 1.88 from 1; js_nodes.js counts from 1 on either.
+    assert parse(["x;"]) == [[["code", 1, 1]]]
