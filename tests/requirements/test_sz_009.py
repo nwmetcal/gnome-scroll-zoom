@@ -237,7 +237,10 @@ def follow_while_moving(
     shell: Shell, scene: Scene, watch: Watch, what: str, duration_ms: int
 ) -> None:
     key = switch(shell, what)
-    steps = [step(1, "setBoolean", key, True), *wiggle(scene.pointer, duration_ms)]
+    moves = wiggle(scene.pointer, duration_ms)
+    # The pointer is already moving as the switch comes on, so the first text cursor move it
+    # sees is held, as the scenario says, and never shown at once.
+    steps = [*moves[:2], step(1, "setBoolean", key, True), *moves[2:]]
     shell.run_steps([*steps, step(1, "setBoolean", key, False)], timeout_s=duration_ms / 1000 + 5)
     watch.since = time.monotonic()
 
