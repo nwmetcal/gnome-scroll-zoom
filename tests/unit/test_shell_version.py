@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The test shell runs on a GNOME Shell whose major metadata.json lists, and says why not on
-any other (decision 0008). The majors come from metadata.json, so listing one more or one
+any other (decision 0009). The majors come from metadata.json, so listing one more or one
 fewer needs no edit here."""
 
 import json
@@ -45,7 +45,7 @@ def test_an_unlisted_major_says_what_is_listed(gnome_shell: Install) -> None:
     gnome_shell(f'echo "GNOME Shell {UNLISTED}.rc"')
     refusal = gnome_shell_refusal()
     assert refusal is not None
-    assert f"{UNLISTED}.rc" in refusal and "0008" in refusal, refusal
+    assert f"{UNLISTED}.rc" in refusal and "0009" in refusal, refusal
     assert all(major in refusal for major in LISTED), refusal
 
 

@@ -44,7 +44,7 @@ class ShellError(RuntimeError):
 
 def gnome_shell_refusal() -> str | None:
     """Why the test shell will not run on this machine's GNOME Shell, or None when it will:
-    only on a major metadata.json lists (decision 0008)."""
+    only on a major metadata.json lists (decision 0009)."""
     try:
         done = subprocess.run(["gnome-shell", "--version"], capture_output=True, text=True)
     except FileNotFoundError:
@@ -59,7 +59,7 @@ def gnome_shell_refusal() -> str | None:
     return (
         f"the @shell scenarios run on a GNOME Shell metadata.json lists ({', '.join(listed)}),"
         f" and this machine runs {version}: to try it, list its major on a branch"
-        " (decision 0008)"
+        " (decision 0009)"
     )
 
 

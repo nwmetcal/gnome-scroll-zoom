@@ -102,7 +102,7 @@ def metadata_problems(metadata: dict[str, object], today: date) -> list[str]:
 
 
 def _shell_version_problems(versions: object, today: date) -> list[str]:
-    # Decision 0008: a whole major joins once the @shell scenarios pass on its stable release.
+    # Decision 0009: a whole major joins once the @shell scenarios pass on its stable release.
     if not isinstance(versions, list) or not versions:
         return ["shell-version lists the majors it runs on"]
     latest = latest_stable_major(today)

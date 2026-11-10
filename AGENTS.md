@@ -24,7 +24,7 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
   download and install with `gnome-extensions install`, and the one extensions.gnome.org takes.
 - A tag `vX.Y.Z` that matches `version-name` in `metadata.json` publishes a release with that
   bundle, through the `release` workflow, and once the owner has set the account, uploads it
-  to extensions.gnome.org for review (decision 0007). A change under `site/` or to the
+  to extensions.gnome.org for review (decision 0008). A change under `site/` or to the
   README's images republishes the project page, through the `pages` workflow.
 
 ## Code map
@@ -59,7 +59,7 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
   level, `screen-magnifier-enabled` and `mag-factor`.
 - `zoomMotion.js` imports nothing of GNOME Shell, so the glide is tested without one.
 - `metadata.json` lists only the GNOME Shell versions the `@shell` scenarios have passed on:
-  a major joins once they pass on its stable release (decision 0008).
+  a major joins once they pass on its stable release (decision 0009).
 - The bundle is one extensions.gnome.org's review takes: only the files the extension loads,
   and a `disable()` that undoes everything `enable()` did.
 - No tracked file is over 1 MB.

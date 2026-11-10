@@ -59,7 +59,7 @@ Push a tag `vX.Y.Z` matching `version-name` in `scroll-zoom@nhicc/metadata.json`
 `release` workflow builds `scroll-zoom.shell-extension.zip` and publishes the release. Once
 the extensions.gnome.org account is set, it then uploads the same bundle there for review,
 and GNOME updates everyone who installed from there once it is approved
-([decision 0007](docs/decisions/0007-updates-reach-people-through-extensions-gnome-org.md)).
+([decision 0008](docs/decisions/0008-updates-reach-people-through-extensions-gnome-org.md)).
 `make zip` builds the same bundle locally, and `make check` holds it to the rules of the
 site's review guidelines that a file check can see (`tests/style/test_bundle.py`).
 
@@ -71,7 +71,7 @@ for (`STATEMENTS` in `tools/ego.py`). Without the variable, a release uploads no
 ## After a GNOME upgrade
 
 `metadata.json` lists only the GNOME versions the tests have passed on
-([decision 0008](docs/decisions/0008-shell-version-grows-after-the-shell-scenarios-pass.md)).
+([decision 0009](docs/decisions/0009-shell-version-grows-after-the-shell-scenarios-pass.md)).
 To add one, on a branch, add its major to `shell-version` and run `make test-shell` on a
 machine whose `gnome-shell --version` reports it; the test shell refuses a major
 `metadata.json` does not list. Fix what fails, merge once it passes on the stable release,

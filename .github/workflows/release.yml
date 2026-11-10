@@ -45,7 +45,7 @@ jobs:
   # Once the owner has set the account on extensions.gnome.org, the repository variable
   # EGO_USERNAME and the secret EGO_PASSWORD in the extensions-gnome-org environment, the bundle
   # the release published goes there for review. Once it is approved, GNOME updates everyone who
-  # installed from there (decision 0007). Without the variable, this job is skipped.
+  # installed from there (decision 0008). Without the variable, this job is skipped.
   ego:
     needs: release
     if: vars.EGO_USERNAME != ''

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Every GNOME major a page or a tool names is one metadata.json lists, and each line that
 says which GNOME Scroll Zoom needs names every major it lists, so adding or dropping one in
-shell-version finds each place to update (decision 0008). Decisions keep their history."""
+shell-version finds each place to update (decision 0009). Decisions keep their history."""
 
 import json
 import re
