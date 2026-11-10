@@ -20,9 +20,10 @@ REPO="$(dirname "$HERE")"
 ROOT="${TEST_SHELL_ROOT:-${XDG_RUNTIME_DIR:-/tmp}/scroll-zoom-test-shell}"
 UUID=scroll-zoom@nhicc
 HELPER=test-unsafe-mode@scroll-zoom.dev
-# Wayland socket paths must stay under 108 bytes, so the runtime folder lives
-# at a short path of its own.
-RUN="${XDG_RUNTIME_DIR:-/tmp}/scroll-zoom-test"
+# Wayland socket paths must stay under 108 bytes, so the runtime folder lives at a short path
+# of its own, named for the root, so test shells with different roots run side by side, as
+# reviewers' do.
+RUN="${XDG_RUNTIME_DIR:-/tmp}/szt-$(printf '%s' "$ROOT" | sha1sum | cut -c1-10)"
 
 test_env() {
     env -i HOME="$HOME" PATH="$PATH" LANG="${LANG:-C.UTF-8}" \

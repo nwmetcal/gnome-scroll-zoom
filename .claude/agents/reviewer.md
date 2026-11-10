@@ -18,8 +18,8 @@ numbered. On a later round it also holds the earlier reviews under your lens.
    author's: `tree="$(mktemp -d)/head"; git worktree add "$tree" <head commit>`, then
    `make setup` there. Use that path from then on.
 3. Follow `review/README.md`: read the diff and the decisions it touches, run the change, hunt
-   under your lens, and prove each finding with a run against the head. Only one test shell
-   runs at a time on a machine; wait for any other to stop before `make test-shell`.
+   under your lens, and prove each finding with a run against the head. Each `make test-shell`
+   run starts a test shell of its own, so it runs beside other reviewers'.
 4. Write your review in the form `review/README.md` gives, to a file outside the repository,
    and check it with `make check-review REVIEW=<that file>` until it passes.
 5. Return the review's text, and nothing else.

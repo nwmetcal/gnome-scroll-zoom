@@ -33,7 +33,8 @@ make install      # install your working copy; log out and back in to load it
 (`dev/test-shell.sh`). It runs on its own D-Bus session and settings, so it never touches
 your desktop. It types and scrolls through virtual input devices and checks what GNOME
 draws. It runs Wayland apps and, through Xwayland, X11 apps, as most games are.
-Only one test shell runs at a time on a machine.
+Test shells with different roots (`TEST_SHELL_ROOT`), such as each `make test-shell` run's,
+run side by side.
 
 ## Looking at the smoothing by eye
 
