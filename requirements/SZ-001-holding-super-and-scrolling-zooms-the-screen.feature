@@ -12,9 +12,10 @@ Feature: SZ-001 Holding Super and scrolling zooms the screen
   last on, and however slowly the wheel turns. These scenarios use GNOME's "centered"
   tracking, where the view's middle is the pointer, within 2 pixels for the rounding of where
   the view sits; under GNOME's other tracking, such as its default, "proportional", the view
-  sits where that tracking puts it. Each pointer here is clear of the edges at the zoom its
-  scenario reaches; the slow spin's, near a corner, is one the view can centre on only once
-  zoom passes 3.2x, which takes that spin more than a second.
+  sits where that tracking puts it, except under "push", where zooming keeps the pointer
+  where it is on the screen instead (SZ-010). Each pointer here is clear of the edges at the
+  zoom its scenario reaches; the slow spin's, near a corner, is one the view can centre on
+  only once zoom passes 3.2x, which takes that spin more than a second.
 
   Scenario: Super and the wheel turn zoom on
     Given zoom is off
