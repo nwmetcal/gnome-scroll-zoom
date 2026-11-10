@@ -49,25 +49,16 @@ GI_IMPORT = re.compile(r"""['"]gi://(\w+)|\bimports\.gi\.(\w+)|\{([^{}]*)\}\s*=\
 DEPRECATED = re.compile(r"\bimports\.(?:byteArray|lang|mainloop)\b|\brun_dispose\(")
 SHELL_ONLY = {"Clutter", "Meta", "St", "Shell"}
 GTK_ONLY = {"Gdk", "Gtk", "Adw"}
-# Each way to add a main loop source, and the ways to remove the one kept in a member. The
-# guidelines ask that a source be removed even when it would end on its own.
-SOURCES = (
-    (
-        r"\bGLib\.(?:timeout_add|timeout_add_seconds|idle_add)(?:_once)?\(",
-        ("GLib.source_remove({})", "GLib.Source.remove({})"),
-    ),
-    (r"\bglobal\.compositor\.get_laters\(\)\.add\(", ("get_laters().remove({})",)),
-    (r"\b(?:setTimeout|setInterval)\(", ("clearTimeout({})", "clearInterval({})")),
-)
+# JavaScript allows space around a member's dot and before a call's parenthesis.
+DOT = r"\s*\.\s*"
+OPEN = r"\s*\("
 KEYBINDINGS = {"addKeybinding": "removeKeybinding", "add_keybinding": "remove_keybinding"}
 # The forms undone() reads. Any other call that connects a signal, adds a main loop source, or
-# binds a key fails the check until it reads that form too, so no form slips by unread.
+# binds a key fails the check until it reads that form too: the check promises to fail on
+# what it cannot read, not to read every way JavaScript can spell a call.
 SIGNAL_FORMS = {"connect", "connect_after", "connectObject"}
-SOURCE_FORMS = {
-    f"{name}{once}"
-    for name in ("timeout_add", "timeout_add_seconds", "idle_add")
-    for once in ("", "_once")
-}
+GLIB_SOURCES = ("timeout_add", "timeout_add_seconds", "idle_add")
+SOURCE_FORMS = {f"{name}{once}" for name in GLIB_SOURCES for once in ("", "_once")}
 KEY_FORMS = {*KEYBINDINGS, "grab_accelerator"}
 
 
@@ -259,64 +250,131 @@ def undone(text: str) -> list[str]:
     method runs when, so an undo anywhere in the file counts."""
     flat = re.sub(r"\s+", "", text)
     found: list[str] = []
-    signal = r"\.(connect(?:_after)?)\("
-    kept = {
-        m.end(): (m.group(1), m.group(2))
-        for m in re.finditer(rf"(this\.\w+)\s*=\s*([\w.()]+?)\s*{signal}", text)
-    }
-    for m in re.finditer(signal, text):
-        if m.end() not in kept:
-            found.append(f"a signal whose id is not kept: {line_of(text, m.start())}")
-    for member, receiver in kept.values():
-        if f"{receiver}.disconnect({member})" not in flat:
-            found.append(f"{receiver} is never disconnected from {member}")
-    for m in re.finditer(r"([\w.()]+?)\s*\.connectObject\(", text):
-        if f"{m.group(1)}.disconnectObject(this)" not in flat:
+    found += _kept_and_undone(
+        text,
+        flat,
+        rf"{DOT}(connect(?:_after)?){OPEN}",
+        "disconnect",
+        "a signal whose id",
+        "is never disconnected from",
+    )
+    found += _kept_and_undone(
+        text,
+        flat,
+        rf"{DOT}(grab_accelerator){OPEN}",
+        "ungrab_accelerator",
+        "a key grab whose action",
+        "never ungrabs",
+    )
+    for m in re.finditer(rf"([\w.()]+?){DOT}connectObject{OPEN}", text):
+        owner = re.sub(r"\s+", "", (arguments(text, m.end() - 1) or [""])[-1])
+        if f"{m.group(1)}.disconnectObject({owner})" not in flat:
             found.append(f"{m.group(1)} is never disconnected: {line_of(text, m.start())}")
-    for adds, removes in SOURCES:
+    for adds, removes in sources(text):
         for m in re.finditer(rf"(?:(this\.\w+)\s*=\s*)?{adds}", text):
             member = m.group(1)
             if member is None or not any(r.format(member) in flat for r in removes):
                 found.append(f"a main loop source never removed: {line_of(text, m.start())}")
-    grabs = {
-        m.end(): (m.group(1), m.group(2))
-        for m in re.finditer(r"(this\.\w+)\s*=\s*([\w.()]+?)\s*\.grab_accelerator\(", text)
-    }
-    for m in re.finditer(r"\.grab_accelerator\(", text):
-        if m.end() not in grabs:
-            found.append(f"a key grab whose action is not kept: {line_of(text, m.start())}")
-    for member, receiver in grabs.values():
-        if f"{receiver}.ungrab_accelerator({member})" not in flat:
-            found.append(f"{receiver} never ungrabs {member}")
-    found += unread(text)
     for adds, removes in KEYBINDINGS.items():
         read = {
             m.start(2): m
-            for m in re.finditer(rf"([\w.()]+?)\s*\.({adds})\(\s*([^,()]+?)\s*,", text)
+            for m in re.finditer(rf"([\w.()]+?){DOT}({adds}){OPEN}([^,()]+?)\s*,", text)
         }
-        for m in re.finditer(rf"\.({adds})\(", text):
+        for m in re.finditer(rf"{DOT}({adds}){OPEN}", text):
             named = read.get(m.start(1))
             if named is None:
                 found.append(f"a keybinding this check cannot read: {line_of(text, m.start())}")
             elif re.sub(r"\s+", "", f"{named[1]}.{removes}({named[3]})") not in flat:
                 found.append(f"the keybinding {named[3]} is never removed")
+    return found + unread(text)
+
+
+def _kept_and_undone(
+    text: str, flat: str, call: str, undo: str, what: str, never: str
+) -> list[str]:
+    """Each call whose id is not kept in a member, or whose kept id is never undone."""
+    found: list[str] = []
+    kept = {
+        m.end(): (m.group(1), m.group(2))
+        for m in re.finditer(rf"(this\.\w+)\s*=\s*([\w.()]+?){call}", text)
+    }
+    for m in re.finditer(call, text):
+        if m.end() not in kept:
+            found.append(f"{what} is not kept: {line_of(text, m.start())}")
+    for member, receiver in kept.values():
+        if f"{receiver}.{undo}({member})" not in flat:
+            found.append(f"{receiver} {never} {member}")
     return found
 
 
+def glib_names(text: str) -> list[str]:
+    """GLib, and each other name the file imports it under."""
+    names = re.findall(r"""import\s+(\w+)\s+from\s+['"]gi://GLib['"]""", text)
+    names += re.findall(r"(\w+)\s*=\s*imports\.gi\.GLib\b", text)
+    return sorted({"GLib", *names})
+
+
+def sources(text: str) -> list[tuple[str, tuple[str, ...]]]:
+    """Each way the file adds a main loop source, and the ways to remove one kept in a member."""
+    found: list[tuple[str, tuple[str, ...]]] = []
+    adders = "|".join(GLIB_SOURCES)
+    for glib in glib_names(text):
+        removes = (f"{glib}.source_remove({{}})", f"{glib}.Source.remove({{}})")
+        found.append((rf"\b{glib}{DOT}(?:{adders})(?:_once)?{OPEN}", removes))
+    laters = ["global.compositor.get_laters()"]
+    laters += re.findall(
+        r"((?:this\.)?\w+)\s*=\s*global\s*\.\s*compositor\s*\.\s*get_laters\s*\(\s*\)", text
+    )
+    removes = tuple(f"{later}.remove({{}})" for later in laters)
+    for later in laters:
+        found.append((rf"(?<![\w.]){re.escape(later)}{DOT}add{OPEN}", removes))
+    found.append(
+        (rf"\b(?:setTimeout|setInterval){OPEN}", ("clearTimeout({})", "clearInterval({})"))
+    )
+    return found
+
+
+def arguments(text: str, opening: int) -> list[str]:
+    """The top-level arguments of the call whose parenthesis is at opening."""
+    depth, quote, start = 0, "", opening + 1
+    args: list[str] = []
+    for index in range(opening, len(text)):
+        char = text[index]
+        if quote:
+            quote = "" if char == quote and text[index - 1] != "\\" else quote
+        elif char in "'\"`":
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+            if depth == 0:
+                return [*args, text[start:index].strip()]
+        elif char == "," and depth == 1:
+            args.append(text[start:index].strip())
+            start = index + 1
+    return args
+
+
 def unread(text: str) -> list[str]:
-    """Each call that connects, adds a source, or binds a key in a form undone() does not read."""
+    """Each call that connects, subscribes, adds a source, or binds a key in a form undone()
+    does not read."""
     found: list[str] = []
-    for m in re.finditer(r"\.([A-Za-z]\w*)\(", text):
+    for m in re.finditer(rf"\.\s*([A-Za-z]\w*){OPEN}", text):
         name, lower = m.group(1), m.group(1).lower()
-        if "connect" in lower and not lower.startswith("disconnect") and name not in SIGNAL_FORMS:
+        signal = "connect" in lower and not lower.startswith("disconnect")
+        signal |= "subscribe" in lower and not lower.startswith("unsubscribe")
+        signal |= lower in {"bus_watch_name", "bus_own_name"}
+        if signal and name not in SIGNAL_FORMS:
             found.append(f"a signal this check cannot read: {line_of(text, m.start())}")
-        bind = lower.startswith(("add", "grab")) and (
-            "keybinding" in lower or "accelerator" in lower
-        )
+        bind = "keybinding" in lower and not lower.startswith("remove")
+        bind |= lower.startswith("grab") and "accelerator" in lower
         if bind and name not in KEY_FORMS:
             found.append(f"a key binding this check cannot read: {line_of(text, m.start())}")
-    for m in re.finditer(r"\b(\w+_add\w*|\w+_source_new\w*|attach)\(", text):
-        if m.group(1) not in SOURCE_FORMS:
+    glib = "|".join(glib_names(text))
+    for m in re.finditer(rf"\b(\w+_add\w*|\w+_source_new\w*|attach){OPEN}", text):
+        on_glib = re.search(rf"(?:^|[^\w.])(?:{glib}){DOT}$", text[: m.start()])
+        if m.group(1) not in SOURCE_FORMS or not on_glib:
             found.append(f"a main loop source this check cannot read: {line_of(text, m.start())}")
     return found
 
@@ -361,10 +419,38 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "global.display.grab_accelerator('<Super>z', 0);": "a key grab whose action is not kept",
         "this._k = global.display.grab_accelerator('<Super>z', 0);": "never ungrabs this._k",
         "global.display.grab_accelerators(keys);": "a key binding this check cannot read",
+        "this._id = global.stage.connect ('x', f);": "global.stage is never disconnected from",
+        "GLib.timeout_add (0, 1, f);": "a main loop source never removed",
+        "Main.wm.addKeybinding ('k', s, 0, 0, f);": "the keybinding 'k' is never removed",
+        "const laters = global.compositor.get_laters();\nthis._l = laters.add(0, f);": (
+            "a main loop source never removed"
+        ),
+        "import G from 'gi://GLib';\nthis._id = G.timeout_add(0, 1, f);": (
+            "a main loop source never removed"
+        ),
+        "this._id = X.timeout_add(0, 1, f);": "a main loop source this check cannot read",
+        "this._s = GLib.timeout_source_new (100);": "a main loop source this check cannot",
+        "Main.wm.setCustomKeybindingHandler('k', 0, f);": "a key binding this check cannot read",
+        "Gio.DBus.session.signal_subscribe(null, 'a', 'b', null, null, 0, f);": (
+            "a signal this check cannot read"
+        ),
+        "this._a.connectObject('x', f, this._h);\nthis._a.disconnectObject(this);": (
+            "this._a is never disconnected"
+        ),
     }
     for code, problem in left.items():
         assert any(problem in found for found in undone(code)), (code, undone(code))
     clean = """
+        import G from 'gi://GLib';
+        const laters = global.compositor.get_laters();
+        this._spaced = global.stage.connect ('y', f);
+        this._l2 = laters.add(0, f);
+        this._g = G.timeout_add(0, 1, f);
+        this._b.connectObject('x', f, this._h);
+        global.stage.disconnect(this._spaced);
+        laters.remove(this._l2);
+        G.source_remove(this._g);
+        this._b.disconnectObject(this._h);
         this._id = this._a.connect('x', f);
         this._after = this._a.connect_after('y', f);
         this._a.connectObject('x', f, this);
