@@ -1,7 +1,7 @@
 # Zoom drives GNOME's own magnifier
 
 - Status: accepted
-- Date: 2026-11-11
+- Date: 2026-11-10
 - Decided by: Nicholas Metcalf
 
 ## Context
@@ -25,9 +25,10 @@ cursor goes through Scroll Zoom's own switches while Scroll Zoom is on (decision
 How the view follows the pointer stays GNOME's own setting, Follow Behavior, which GNOME's
 Settings page shows. A setting of Scroll Zoom's own for it would override that page without a
 word, which the switches for focus and the text cursor can do only because the page shows
-neither. Scroll Zoom adds one thing to GNOME's following: under push, zooming keeps the pointer
-where it is on the screen, where GNOME's own push zooms around the view's middle and pushes
-the pointer toward an edge (SZ-010).
+neither. Scroll Zoom adds one thing to GNOME's following: under push, zooming with Super and the
+wheel or a touchpad, and zoom coming on, keep the pointer where it is on the screen, where
+GNOME's own push zooms around the view's middle and pushes the pointer toward an edge
+(SZ-010). GNOME's keyboard zoom and its Settings slider still zoom GNOME's way.
 
 ### Consequences
 
@@ -41,8 +42,8 @@ the pointer toward an edge (SZ-010).
 ### Checked by
 
 SZ-001 and SZ-007 drive GNOME's zoom settings; SZ-006 checks that turning the extension off
-hands the magnifier back unchanged; SZ-010 checks that GNOME's ways of following other than
-push place the view as GNOME does.
+hands the magnifier back unchanged; SZ-001 checks GNOME's centred following, and SZ-010 checks
+push and that moving with the contents and none place the view as GNOME does.
 
 ## Reversing it
 

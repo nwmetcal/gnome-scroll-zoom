@@ -475,9 +475,10 @@ export default class ScrollZoomExtension extends Extension {
         }
     }
 
-    // Each time zoom comes on, by the wheel or by GNOME's toggle, centre the view on the
-    // pointer. GNOME's magnifier skips that when the pointer has not moved since zoom was
-    // last on, so the view would come on around wherever it was then.
+    // Each time zoom comes on, by the wheel or by GNOME's toggle, place the view for the
+    // pointer: under push, so the pointer stays where it is drawn, and otherwise as GNOME's
+    // following places it. GNOME's magnifier skips that when the pointer has not moved since
+    // zoom was last on, so the view would come on around wherever it was then.
     // When Super+Alt+8 or Settings turned zoom on or off, also stop any glide.
     _onActiveChanged(active) {
         if (active) {
