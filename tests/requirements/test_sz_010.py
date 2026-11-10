@@ -10,7 +10,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from tests.requirements.conftest import Scene
 from tests.shell import SCREEN, Json, Shell, number, step
 
-scenarios("SZ-010-zooming-keeps-the-pointer-where-it-is-when-gnome-pushes.feature")
+scenarios("SZ-010-zooming-keeps-the-pointer-where-it-is-when-gnome-s-following-pushes.feature")
 
 MAGNIFIER = "new imports.gi.Gio.Settings({schema_id: 'org.gnome.desktop.a11y.magnifier'})"
 GNOME_FOLLOWING = {
