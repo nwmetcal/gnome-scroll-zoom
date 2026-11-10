@@ -100,6 +100,13 @@
             this.pointer.notify_absolute_motion(microseconds(), x, y);
         },
 
+        // A mark in the frames being recorded, so a step can tell the frames drawn before an
+        // input from those drawn after it.
+        mark() {
+            if (this._paintId)
+                this.frames.push({mark: true, ms: microseconds() / 1000});
+        },
+
         record() {
             this.frames = [];
             if (this._paintId)
@@ -186,6 +193,7 @@
             const magnifier = new gio.Settings({schema_id: 'org.gnome.desktop.a11y.magnifier'});
             magnifier.set_string('mouse-tracking', 'centered');
             magnifier.reset('screen-position');
+            magnifier.reset('scroll-at-edges');
             magnifier.reset('focus-tracking');
             magnifier.reset('caret-tracking');
             new gio.Settings({schema_id: 'org.gnome.desktop.a11y.applications'})

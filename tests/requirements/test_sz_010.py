@@ -49,6 +49,9 @@ class Drawn:
     view_before: Point = (0.0, 0.0)
     middle_before: Point = (0.0, 0.0)
     view_port: Box = (0.0, 0.0, float(SCREEN[0]), float(SCREEN[1]))
+    # Whether GNOME holds what its view shows within the screen; its Extend Outside Screen
+    # Edges lets it go past.
+    within_screen: bool = True
 
 
 @pytest.fixture
@@ -72,7 +75,9 @@ def drawn_at(roi: Json, zoom: Json, pointer: Json, on: Json, view_port: Box) -> 
     return view_port[0] + (x - left) * factor, view_port[1] + (y - top) * factor
 
 
-def kept_at(before: Point, pointer: Point, zoom: float, view_port: Box) -> Point:
+def kept_at(
+    before: Point, pointer: Point, zoom: float, view_port: Box, within_screen: bool = True
+) -> Point:
     """Where a pointer kept where it is is drawn at this zoom: where it was drawn, as near as
     keeps its whole image in the view, and the part of the screen the view shows within the
     screen."""
@@ -81,7 +86,8 @@ def kept_at(before: Point, pointer: Point, zoom: float, view_port: Box) -> Point
         origin, size = view_port[axis], view_port[axis + 2]
         place = min(max(before[axis], origin), origin + size - POINTER_IMAGE_PX * zoom)
         start = pointer[axis] - (place - origin) / zoom
-        start = min(max(start, 0.0), SCREEN[axis] - size / zoom)
+        if within_screen:
+            start = min(max(start, 0.0), SCREEN[axis] - size / zoom)
         kept.append(origin + (pointer[axis] - start) * zoom)
     return kept[0], kept[1]
 
@@ -153,6 +159,12 @@ def view_on_half(shell: Shell, drawn: Drawn, half: str) -> None:
     drawn.view_port = view_port
 
 
+@given("GNOME's zoomed view may go past the screen's edges")
+def past_edges(shell: Shell, drawn: Drawn) -> None:
+    shell.call(f"{MAGNIFIER}.set_boolean('scroll-at-edges', true); return true;")
+    drawn.within_screen = False
+
+
 @given(parsers.parse("the pointer is at {x:d}, {y:d}"))
 def pointer_at(shell: Shell, drawn: Drawn, x: int, y: int) -> None:
     shell.run_steps([step(1, "moveTo", x, y)])
@@ -194,6 +206,41 @@ def spin_and_back(shell: Shell, scene: Scene, up: int, down: int) -> None:
     steps += [step(QUICK_GAP_MS, "notch", -1) for _ in range(down)]
     steps += [step(20, "release", "super")]
     shell.run_steps(steps, timeout_s=30)
+    time.sleep(0.2)
+    shell.settle()
+    recorded(shell, scene)
+
+
+@when(
+    parsers.parse(
+        "Super is held and two fingers swipe {up:d} pixels up and {back:d} back without lifting"
+    )
+)
+def swipe_and_back(shell: Shell, scene: Scene, up: int, back: int) -> None:
+    record(shell)
+    steps: list[list[Json]] = [step(20, "press", "super")]
+    steps += [step(15, "swipe", -SWIPE_STEP_PX) for _ in range(up // SWIPE_STEP_PX)]
+    steps += [step(15, "swipe", SWIPE_STEP_PX) for _ in range(back // SWIPE_STEP_PX)]
+    steps += [step(15, "lift"), step(20, "release", "super")]
+    shell.run_steps(steps, timeout_s=30)
+    time.sleep(0.2)
+    shell.settle(timeout_s=10)
+    recorded(shell, scene)
+
+
+@when(
+    parsers.parse(
+        "GNOME's zoom level is set to {zoom:g}x, and {delay_ms:d} ms later the wheel turns "
+        "1 notch up with Super"
+    )
+)
+def level_then_notch(shell: Shell, scene: Scene, zoom: float, delay_ms: int) -> None:
+    # GNOME's keyboard zoom and its slider set this level; the test shell runs no settings
+    # daemon. The mark tells the frames before the notch from those after it.
+    record(shell)
+    shell.call(f"{MAGNIFIER}.set_double('mag-factor', {zoom}); return true;")
+    steps = [step(delay_ms, "mark"), step(1, "press", "super"), step(20, "notch", 1)]
+    shell.run_steps([*steps, step(20, "release", "super")])
     time.sleep(0.2)
     shell.settle()
     recorded(shell, scene)
@@ -271,7 +318,13 @@ def pointer_kept(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> No
         )
         x, y = drawn_at(frame["roi"], frame["zoom"], frame["pointer"], frame["on"], drawn.view_port)
         if frame["on"] is True:
-            kx, ky = kept_at(drawn.before, drawn.pointer, number(frame["zoom"]), drawn.view_port)
+            kx, ky = kept_at(
+                drawn.before,
+                drawn.pointer,
+                number(frame["zoom"]),
+                drawn.view_port,
+                drawn.within_screen,
+            )
         else:
             kx, ky = drawn.pointer
         worst = max(worst, abs(x - kx), abs(y - ky))
@@ -329,4 +382,28 @@ def middle_kept(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> Non
     assert worst <= tolerance, (
         f"the view's middle was {worst:.1f} pixels from where GNOME had it, {mx:.1f}, {my:.1f}, "
         f"over {len(frames)} frames with zoom on"
+    )
+
+
+@then(
+    parsers.parse(
+        "every frame from the notch kept the pointer where it was drawn then, "
+        "within {tolerance:d} pixels"
+    )
+)
+def kept_from_notch(scene: Scene, drawn: Drawn, tolerance: int) -> None:
+    marks = [i for i, frame in enumerate(scene.frames) if frame.get("mark") is True]
+    assert marks, "no mark was recorded for the notch"
+    before = [frame for frame in scene.frames[: marks[0]] if frame.get("on") is True]
+    after = [frame for frame in scene.frames[marks[0] + 1 :] if frame.get("on") is True]
+    assert before and after, "no frame was drawn before or after the notch"
+    last = before[-1]
+    bx, by = drawn_at(last["roi"], last["zoom"], last["pointer"], last["on"], drawn.view_port)
+    worst = 0.0
+    for frame in after:
+        x, y = drawn_at(frame["roi"], frame["zoom"], frame["pointer"], frame["on"], drawn.view_port)
+        worst = max(worst, abs(x - bx), abs(y - by))
+    assert worst <= tolerance, (
+        f"the pointer was drawn {worst:.1f} pixels from {bx:.0f}, {by:.0f}, where it was as the "
+        f"notch came, over {len(after)} frames after it"
     )
