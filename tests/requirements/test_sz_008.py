@@ -39,7 +39,7 @@ def no_pattern(shell: Shell) -> Generator[None]:
     shell.call("return scrollZoomTest.showPattern();")
 
 
-def open_app(shell: Shell, kind: str, *args: str) -> None:
+def open_app(shell: Shell, kind: str, *args: str, wait: bool = True) -> None:
     command = ["gjs", "-m", str(APP), *args]
     if kind == "X11":
         x = shell.call("return scrollZoomTest.xDisplay();")
@@ -61,7 +61,8 @@ def open_app(shell: Shell, kind: str, *args: str) -> None:
     x, y = TEXT_VIEW
     shell.run_steps([step(1, "moveTo", x, y)])
     shell.wait_until(f"scrollZoomTest.state().pointer.join() === '{int(x)},{int(y)}'")
-    wait_for_text(shell)
+    if wait:
+        wait_for_text(shell)
 
 
 def wait_for_text(shell: Shell, timeout_s: float = 10.0) -> None:
@@ -92,11 +93,14 @@ def full_screen_app(shell: Shell, kind: str) -> None:
 
 @given("a full-screen Wayland app the person allowed to take over the keyboard's shortcuts")
 def app_with_shortcuts(shell: Shell) -> None:
-    open_app(shell, "Wayland", "--take-shortcuts")
+    # The app asks as it goes full screen, and GNOME's dialog dims the screen until the
+    # person answers, so the app's page shows only after.
+    open_app(shell, "Wayland", "--take-shortcuts", wait=False)
     # GNOME asks the person in a dialog; Enter chooses Allow, its default.
     shell.wait_until("Main.modalCount > 0", timeout_s=10)
     shell.run_steps([step(20, "press", "return"), step(20, "release", "return")])
     shell.wait_until("Main.modalCount === 0")
+    wait_for_text(shell)
     # Taken over, Super alone no longer opens the Activities overview, which it does over an
     # app that has not taken it.
     shell.run_steps([step(20, "press", "super"), step(60, "release", "super")])
