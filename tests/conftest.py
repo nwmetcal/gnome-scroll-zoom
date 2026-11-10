@@ -121,9 +121,12 @@ def test_shell() -> Generator[Shell]:
     if not gnome_shell_50():
         pytest.fail("the @shell scenarios need GNOME Shell 50 on this machine")
     shell = Shell(new_root())
-    shell.start()
-    yield shell
-    shell.stop()
+    try:
+        shell.start()
+        yield shell
+    finally:
+        # Also when the start times out, so no shell is left running.
+        shell.stop()
 
 
 @pytest.fixture

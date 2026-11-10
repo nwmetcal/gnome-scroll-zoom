@@ -11,6 +11,8 @@
 #   dev/test-shell.sh eval 'js code'  run JavaScript inside it, print the result
 #   dev/test-shell.sh shot out.png    screenshot the whole test screen
 #   dev/test-shell.sh client cmd...   run an app inside it: Wayland, or X11 through Xwayland
+#                                     with the shell's DISPLAY and XAUTHORITY (see
+#                                     scrollZoomTest.xDisplay() in tests/shell_harness.js)
 #   dev/test-shell.sh log             show the shell's log
 #   dev/test-shell.sh stop
 set -euo pipefail
@@ -47,6 +49,7 @@ stop() {
     fi
     # A portal started by a test app can leave a FUSE mount behind.
     fusermount3 -u -z "$RUN/doc" 2>/dev/null || fusermount -u -z "$RUN/doc" 2>/dev/null || true
+    rm -rf "$RUN"
 }
 
 start() {
