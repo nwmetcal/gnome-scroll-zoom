@@ -30,7 +30,8 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
   each edge where the font put it, so a thin stroke cannot come out wide and pale.
 
   A letter GNOME's blurry scaling draws in one piece of at least half ink is drawn in one
-  piece too, so a stem cut through or an arch parted from its stem shows.
+  piece too, so a stem cut through or an arch parted from its stem shows: at 6x, and at 4x
+  and 3x, where a source pixel is only a few screen pixels and a joint has less room.
 
   The edge position the README offers for bolder or thinner text moves only the edges:
   paper more than a pixel from any ink stays paper at the README's 0.55 as at the default
@@ -81,14 +82,16 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
     And its thin bars' faint ends, under half inked, are drawn as tall as the font draws them, within 1 pixel on average
 
   Scenario Outline: Letters stay whole
-    Given zoom is on at 6x over the test pattern's <part>
+    Given zoom is on at <zoom>x over the test pattern's <part>
     When the zoomed screen is captured with sharp smoothing and with GNOME's standard scaling
     Then every letter of the <part> GNOME's scaling draws in one piece is drawn in one piece
 
     Examples:
-      | part       |
-      | text       |
-      | serif line |
+      | part       | zoom |
+      | text       | 6    |
+      | serif line | 6    |
+      | text       | 4    |
+      | text       | 3    |
 
   Scenario Outline: Paper away from the text stays paper, bolder or not
     Given the test pattern is captured unzoomed
