@@ -129,7 +129,7 @@ def zoom_over_pattern(shell: Shell, scene: Scene, zoom: float) -> None:
 PATTERN_PARTS = {"text": "text", "serif line": "serif"}
 # How far below a part the pointer rests to zoom over it, in pixels: past the pointer's
 # outline.
-POINTER_CLEARANCE = 3
+POINTER_CLEARANCE_PX = 3
 
 
 @given(parsers.parse("zoom is on at {zoom:g}x over the test pattern's {part}"))
@@ -138,7 +138,7 @@ def zoom_over_part(shell: Shell, scene: Scene, zoom: float, part: str) -> None:
     # whole pattern is not, and the zoomed pointer, which screenshots show and which hangs
     # down and right from where it points, is drawn clear of it.
     box = pattern_box(shell, PATTERN_PARTS[part])
-    pointer = (round(box.x + box.width / 2), round(box.y + box.height + POINTER_CLEARANCE))
+    pointer = (round(box.x + box.width / 2), round(box.y + box.height + POINTER_CLEARANCE_PX))
     zoom_to(shell, scene, zoom, pointer)
     time.sleep(REPAINT_S)
 

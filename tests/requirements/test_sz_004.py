@@ -39,7 +39,7 @@ STYLES = {
     "GNOME's standard scaling": "standard",
 }
 # The harness draws each stem one pixel wide.
-STEM_WIDTH = 1.0
+STEM_WIDTH_PX = 1.0
 
 
 @given("the test pattern is captured unzoomed")
@@ -113,7 +113,7 @@ def corners_square(shell: Shell, scene: Scene, most: float) -> None:
         name: Box(
             number(whole["x"]) + number(whole[name]),
             number(whole["y"]) + number(stems["y"]),
-            STEM_WIDTH,
+            STEM_WIDTH_PX,
             number(stems["height"]),
         )
         for name in ("fullStem", "splitStem")
