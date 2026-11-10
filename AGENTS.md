@@ -10,9 +10,9 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
   types (pyright), every scenario not tagged `@shell`, and the unit and style tests. It writes
   the traceability matrix to `build/traceability.md`. Nothing merges without it green.
 - `make test-shell` runs `make check`'s tests and the `@shell` scenarios too, in a private
-  headless GNOME Shell 50 that `dev/test-shell.sh` starts (decision 0005). It needs GNOME
-  Shell 50 and a GPU render node. Run it before pushing any change to the extension, and say
-  in the pull request that it passed.
+  headless GNOME Shell that `dev/test-shell.sh` starts (decision 0005). It needs a GNOME Shell
+  whose major `metadata.json` lists, today 50, and a GPU render node. Run it before pushing
+  any change to the extension, and say in the pull request that it passed, and on which.
 - `make format` rewrites the Python, which ruff owns.
 - `make check-commits` checks the commit messages from `origin/main` to the branch's head.
 - `make check-intent BODY=<file>` checks a description's Intent section against the branch.
@@ -144,7 +144,8 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | No words that sell, no tool or model names, no emoji | `tests/style/test_words.py` |
 | No tracked file over 1 MB | `tests/style/test_sizes.py` |
 | The bundle holds only what the extension loads, metadata and a schema the site takes, and each process's own libraries; every signal, main loop source, and keybinding is undone | `tests/style/test_bundle.py` |
-| `shell-version` lists whole stable majors, and the test shell runs only on one it lists | `tests/style/test_bundle.py`; `gnome_shell_refusal` in `tests/shell.py` |
+| `shell-version` lists only whole majors released by today's date, and the test shell runs only on one it lists | `tests/style/test_bundle.py`; `gnome_shell_refusal` in `tests/shell.py` |
+| A change to `shell-version` says in its description which GNOME Shell its `make test-shell` passed on | review: the rules lens |
 | An upload to extensions.gnome.org sends what `gnome-extensions upload` sends, and never prints the password or token | `tests/unit/test_ego.py` |
 | A step crops only boxes wholly on its screenshot, so it never judges an empty crop | `crop` in `tests/images.py`, held by `tests/unit/test_images.py` |
 | The `@shell` scenarios pass with test shells side by side, as a review round runs them | the `deliver` skill's Prove step: two `make test-shell` runs at once when the extension, the test shell, its harness, or a `@shell` step changes |

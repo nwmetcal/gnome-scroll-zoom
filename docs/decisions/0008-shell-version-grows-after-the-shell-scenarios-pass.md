@@ -38,6 +38,10 @@ them GNOME's own zoom.
   each GNOME the newest version that lists it.
 - A change to `shell-version` is a release: bump `version-name`, tag it, and the `release`
   workflow publishes it.
+- The same change updates each place that names the GNOME it needs: "What you need" in the
+  README, the note and the structured data on the project page, the release notes in the
+  `release` workflow, and the lines on `make test-shell` in `AGENTS.md` and
+  `CONTRIBUTING.md`.
 
 ### Consequences
 
@@ -50,10 +54,13 @@ them GNOME's own zoom.
 
 `make test-shell` runs only on a GNOME Shell whose major `metadata.json` lists
 (`tests/shell.py`), so a new major starts by listing it on a branch.
-`tests/style/test_bundle.py` refuses an entry that is not a whole major. The rules lens
+`tests/style/test_bundle.py` refuses an entry that is not a whole major, or that the date
+says is not released yet, counted as the site's own analyzer counts it. The rules lens
 checks that a change to `shell-version` says in its description which GNOME Shell its
 `make test-shell` passed on.
 
 ## Reversing it
 
-Add majors without running the scenarios on them. Nothing but review stands in the way.
+To list a major without running the scenarios on it, list it: the test shell's gate only
+keeps the scenarios from running on a major that is not listed, and review is what asks
+for the run. The date check stays either way, since the site refuses future majors.

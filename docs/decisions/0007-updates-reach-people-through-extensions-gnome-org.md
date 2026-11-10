@@ -46,6 +46,8 @@ set, the workflow uploads nothing.
   installed and extension installs are allowed (`updatesSupported`). The README says so.
 - Bad: the release zip and `make install` still never update themselves. The README says
   so, and how to switch.
+- Bad: the first upload fixes the uuid, `scroll-zoom@nhicc`, for good: a new uuid would be a
+  new listing, and copies installed under the old one would never update to it.
 
 ### Checked by
 
@@ -54,7 +56,8 @@ can see. `tests/unit/test_ego.py` holds the upload to what `gnome-extensions upl
 
 ## Reversing it
 
-Remove the `ego` job from the `release` workflow and `tools/ego.py`, and point the README
-back at the release zip. Copies installed from extensions.gnome.org keep working. Marking the
-extension inactive there stops new installs, and GNOME then finds no newer version for the
-copies already installed.
+Remove the `ego` job from the `release` workflow, `tools/ego.py` and its tests in
+`tests/unit/test_ego.py`, and the lines of `AGENTS.md` and `CONTRIBUTING.md` that name the
+upload, and point the README and the project page back at the release zip. Copies installed
+from extensions.gnome.org keep working. Marking the extension inactive there stops new
+installs, and GNOME then finds no newer version for the copies already installed.
