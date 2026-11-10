@@ -8,7 +8,9 @@
 // - glides between zoom levels instead of jumping (zoomMotion.js),
 // - moves the zoomed view on every pointer movement, in step with the
 //   display, instead of on GNOME's 60 Hz timer,
-// - redraws zoomed text with clean edges instead of blur (smoothing.js).
+// - redraws zoomed text with clean edges instead of blur (smoothing.js),
+// - leaves the view with the pointer when keyboard focus or a text cursor
+//   moves, unless its own settings say to follow them.
 //
 // Why the keys always include Super: on Wayland, mutter sends scroll events
 // straight to the app under the pointer unless the window-drag modifier
@@ -16,6 +18,7 @@
 // is held. Only then do they reach the shell, where this extension sees them.
 
 import Clutter from 'gi://Clutter';
+import GDesktopEnums from 'gi://GDesktopEnums';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
@@ -64,6 +67,15 @@ const STYLE_MODES = {
     standard: null, // GNOME's own rendering, no shader
 };
 
+// Scroll Zoom's switches for following, the zoom region's setter each one answers for, GNOME's
+// own setting that setter is handed back when the extension is turned off, and its modes.
+const FOLLOWING = [
+    ['follow-focus', 'setFocusTrackingMode', 'focus-tracking',
+        GDesktopEnums.MagnifierFocusTrackingMode],
+    ['follow-text-cursor', 'setCaretTrackingMode', 'caret-tracking',
+        GDesktopEnums.MagnifierCaretTrackingMode],
+];
+
 const now = () => GLib.get_monotonic_time() / 1e6;
 
 export default class ScrollZoomExtension extends Extension {
@@ -86,6 +98,7 @@ export default class ScrollZoomExtension extends Extension {
         this._region = Main.magnifier?.getZoomRegions()[0] ?? null;
         if (this._region) {
             this._routeMagFactorChanges();
+            this._routeFollowing();
             this._activeChangedId = Main.magnifier.connect('active-changed',
                 (_magnifier, active) => this._onActiveChanged(active));
         }
@@ -98,6 +111,8 @@ export default class ScrollZoomExtension extends Extension {
             'changed::smoothing-style', () => this._syncSmoothing(),
             'changed::edge-width', () => this._syncSmoothing(),
             'changed::edge-position', () => this._syncSmoothing(),
+            'changed::follow-focus', () => this._syncFollowing(),
+            'changed::follow-text-cursor', () => this._syncFollowing(),
             this);
         this._syncSmoothing();
 
@@ -133,6 +148,11 @@ export default class ScrollZoomExtension extends Extension {
         if (this._region) {
             Main.magnifier.disconnect(this._activeChangedId);
             delete this._region.setMagFactor;
+            // Hand GNOME's own following back, as its settings say.
+            for (const [, method, gnomeKey] of FOLLOWING) {
+                delete this._region[method];
+                this._region[method](this._magSettings.get_enum(gnomeKey));
+            }
         }
         this._smoothing?.remove();
         this._smoothing = null;
@@ -223,6 +243,28 @@ export default class ScrollZoomExtension extends Extension {
             extension._motion.glideTo(Math.log(xMagFactor), now());
             extension._run();
         };
+    }
+
+    // GNOME's magnifier sets its zoom region's following of focus and the text cursor from its
+    // own settings, when the shell starts and on every change to them. Answer each of those
+    // calls with Scroll Zoom's own switch instead, so a change to GNOME's settings never brings
+    // following back. Push moves the view only as far as it takes to show what moved.
+    _routeFollowing() {
+        const extension = this;
+        for (const [key, method, , modes] of FOLLOWING) {
+            const set = this._region[method];
+            this._region[method] = function (_gnomeMode) {
+                set.call(this, extension._settings.get_boolean(key) ? modes.PUSH : modes.NONE);
+            };
+        }
+        this._syncFollowing();
+    }
+
+    _syncFollowing() {
+        if (!this._region)
+            return;
+        for (const [, method] of FOLLOWING)
+            this._region[method]();
     }
 
     // Before a new movement, pick up the current zoom, which may have been

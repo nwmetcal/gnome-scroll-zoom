@@ -29,9 +29,10 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
 ## Code map
 
 - `scroll-zoom@nhicc/` is the extension. `extension.js` reads the scroll keys and the wheel,
-  runs the glide each frame, and moves the view with the pointer. `zoomMotion.js` is the glide
-  physics and imports nothing of GNOME Shell. `smoothing.js` is the shader that redraws the
-  zoomed view. `prefs.js` is the settings window; `schemas/` its settings.
+  runs the glide each frame, moves the view with the pointer, and decides whether the view
+  follows keyboard focus and the text cursor. `zoomMotion.js` is the glide physics and imports
+  nothing of GNOME Shell. `smoothing.js` is the shader that redraws the zoomed view. `prefs.js`
+  is the settings window; `schemas/` its settings.
 - `requirements/` holds the features. `tests/` holds their steps, in `tests/requirements/`,
   and the rest of the tests, in `tests/unit/` and `tests/style/`; `tests/shell.py` and
   `tests/shell_harness.js` drive the test shell, `tests/full_screen_app.js` is the
