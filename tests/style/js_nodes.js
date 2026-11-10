@@ -12,10 +12,12 @@
 //     a callee that is none of them, such as (0, f)(x). kept is
 //     what the call's result is assigned to, if anything. use says how a
 //     global.compositor.get_laters() call is used: hold, add, remove, or null.
-//   names: every place a name stands, a string that holds one alone included, as
-//     [line, name, site]: site is the index of the call it names, declared for the name a
-//     const, let, or var declares, or other.
-//   holds: the names that hold global.compositor.get_laters() in a statement of their own.
+//   names: every place a name stands, as [line, name, site]: site is the index of the call
+//     it names, declared for the name a const, let, or var declares, string for a string
+//     that holds a name alone, or other. A dynamic import stands as the name import().
+//   holds: the plain names that hold global.compositor.get_laters() in a statement of their
+//     own, and that no other module can import. A property of this or of any other object
+//     is never one: an object goes where a reading of one file cannot follow it.
 //   held: each place a held name stands, as [line, name, role]: role is hold, assigned,
 //     laters for the receiver of its own .add( or .remove(, or other.
 //   glib: the names GLib goes by in the file.
@@ -65,21 +67,23 @@ function children(node) {
     return found;
 }
 
-// A statement of its own that holds the laters, as [name, the call, the name's node]:
-// const laters = <LATERS>, or this._laters = <LATERS>.
+// A statement of its own that holds the laters in a plain name, as [name, the call, the
+// name's node]: const laters = <LATERS>, or laters = <LATERS>.
 function holdOf(node) {
     if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' &&
         node.init?.type === 'CallExpression' && path(node.init) === LATERS)
         return [node.id.name, node.init, node.id];
     const assignment = node.type === 'ExpressionStatement' ? node.expression : null;
     if (assignment?.type === 'AssignmentExpression' && assignment.operator === '=' &&
-        assignment.right.type === 'CallExpression' && path(assignment.right) === LATERS) {
-        const target = assignment.left;
-        if (target.type === 'Identifier' || (target.type === 'MemberExpression' &&
-            !target.computed && target.object.type === 'ThisExpression'))
-            return [path(target), assignment.right, target];
-    }
+        assignment.left.type === 'Identifier' &&
+        assignment.right.type === 'CallExpression' && path(assignment.right) === LATERS)
+        return [assignment.left.name, assignment.right, assignment.left];
     return null;
+}
+
+// Older SpiderMonkey calls an export ExportNamedDeclaration, newer ExportDeclaration.
+function isExport(node) {
+    return node.type === 'ExportDeclaration' || node.type === 'ExportNamedDeclaration';
 }
 
 function isMember(node) {
@@ -94,10 +98,14 @@ function addsOrRemoves(parent, key) {
 
 function read(ast) {
     const calls = [], names = [], held = [];
-    const holds = new Map(), glib = new Set(['GLib']);
+    const holds = new Map(), glib = new Set(['GLib']), exported = new Set();
 
     // First GLib's names, and the names that hold the laters.
     (function scan(node) {
+        if (isExport(node) && node.declaration?.type === 'VariableDeclaration') {
+            for (const declarator of node.declaration.declarations)
+                exported.add(declarator);
+        }
         // Newer SpiderMonkey keeps an import's source under moduleRequest, older under source.
         const source = node.moduleRequest?.source ?? node.source;
         if (node.type === 'ImportDeclaration' && source?.value === 'gi://GLib') {
@@ -107,14 +115,13 @@ function read(ast) {
         if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' &&
             path(node.init) === 'imports.gi.GLib')
             glib.add(node.id.name);
-        const hold = holdOf(node);
+        const hold = exported.has(node) ? null : holdOf(node);
         if (hold)
             holds.set(hold[1], hold);
         for (const [, child] of children(node))
             scan(child);
     })(ast);
     const heldNames = new Set([...holds.values()].map(([name]) => name));
-    const heldOnThis = [...heldNames].some(name => name.startsWith('this.'));
     const holdTargets = new Set([...holds.values()].map(([, , target]) => target));
 
     function call(node, parent, key) {
@@ -170,11 +177,8 @@ function read(ast) {
             ? path(node) : null;
         if (here !== null && heldNames.has(here))
             held.push([line, here, role(node, parent, key)]);
-        // this given another name, or taken apart, reaches a held this._laters by that name.
-        const aliased = (parent?.type === 'VariableDeclarator' && key === 'init') ||
-            (parent?.type === 'AssignmentExpression' && key === 'right');
-        if (node.type === 'ThisExpression' && heldOnThis && aliased)
-            held.push([line, 'this', 'other']);
+        if (node.type === 'CallImport' || node.type === 'ImportExpression')
+            names.push([line, 'import()', 'other']);
         const site = node.called === true ? node.call : 'other';
         if (node.type === 'Identifier') {
             const declared = parent?.type === 'VariableDeclarator' && key === 'id';
@@ -185,7 +189,7 @@ function read(ast) {
         // A string that holds a name alone, as obj['name'], a key, or Reflect.get(obj, 'name').
         if (node.type === 'Literal' && typeof node.value === 'string' &&
             /^[A-Za-z_$][\w$]*$/.test(node.value))
-            names.push([line, node.value, 'other']);
+            names.push([line, node.value, 'string']);
         for (const [childKey, child] of children(node)) {
             // A member's property name is read above, with the member; every key is walked,
             // a computed one as code.

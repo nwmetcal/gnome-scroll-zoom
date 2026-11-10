@@ -66,6 +66,14 @@ LATERS = "global.compositor.get_laters()"
 # Words that connect a signal, subscribe on D-Bus, or watch or own a bus name, but not the
 # words that undo them.
 SIGNAL_WORD = re.compile(r"(?<!dis)connect|(?<!un)subscribe|(?<!un)(?:watch|own)_name", re.I)
+# A string names a signal's method only in a method's own spelling: the word first or after an
+# underscore, then nothing, an underscore, or a capital. So 'connect_after', 'connectObject',
+# and 'signal_subscribe' are names, and a property or key such as 'Connected' or 'reconnect',
+# or a signal called 'connected', is not.
+SIGNAL_NAME = re.compile(r"(?:\w+_)?(?:connect|subscribe|(?:watch|own)_name)(?:[A-Z_]\w*)?")
+# Names that run code from a string, or load a module while the extension runs: code no
+# reading of the bundle's files sees.
+CODE = {"eval", "Function", "import()"}
 SOURCE_WORD = re.compile(r"\w+_add\w*|\w+_source_new\w*|attach|setTimeout|setInterval")
 # Words that bind a key: a lower-case name, so a type such as Meta.KeyBindingFlags is not one.
 KEY_WORD = re.compile(r"(?!remove|get_)(?=[a-z])\w*(?i:keybinding)\w*|grab\w*(?i:accelerator)\w*")
@@ -326,9 +334,10 @@ def checked(sources: list[str]) -> list[list[str]]:
     ]
 
 
-def family(name: str) -> str | None:
-    """What a name connects, adds, or binds, if it is one of those names."""
-    if SIGNAL_WORD.search(name):
+def family(name: str, string: bool = False) -> str | None:
+    """What a name connects, adds, or binds, if it is one of those names; a string's name is
+    held to a method's spelling."""
+    if SIGNAL_NAME.fullmatch(name) if string else SIGNAL_WORD.search(name):
         return "signal"
     if SOURCE_WORD.fullmatch(name) or name == "get_laters":
         return "main loop source"
@@ -397,7 +406,9 @@ def undone(text: str, read: Read) -> list[str]:
     # code is read where it is written, or GNOME Shell's, such as the magnifier's
     # _connectSignals, which undoes itself and is left to review.
     for line, name, site in read.names:
-        kind = family(name)
+        if name in CODE and site != "declared":
+            found.append(f"code this check cannot read: {at(line)}")
+        kind = family(name, string=site == "string")
         if kind and not name.startswith("_") and site != "declared" and site not in readable:
             found.append(f"a {kind} this check cannot read: {at(line)}")
     for line, _, role in read.held:
@@ -552,13 +563,43 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         "this._id = Reflect.get(global.stage, 'connect').call(global.stage, 'x', f);": (
             "a signal this check cannot read"
         ),
-        # this, taken apart or by another name, reaches a held this._laters.
+        # get_laters() held on this, as on any other object, is not read, even undone: this goes
+        # where no reading of one file follows it, into a function, a constructor, an array,
+        # or another module.
         "this._laters = global.compositor.get_laters();\nconst {_laters} = this;\n_laters.add();": (
             "a main loop source this check cannot read"
         ),
         "this._laters = global.compositor.get_laters();\nconst self = this;\nself._laters.add();": (
             "a main loop source this check cannot read"
         ),
+        "this._laters = global.compositor.get_laters();\n"
+        "this._l = this._laters.add(0, f);\nthis._laters.remove(this._l);": (
+            "a main loop source this check cannot read"
+        ),
+        "this._laters = global.compositor.get_laters();\nschedule(this);\n"
+        "function schedule(e) {\n    e._l = e._laters.add(0, f);\n}": (
+            "a main loop source this check cannot read"
+        ),
+        "this._laters = global.compositor.get_laters();\nnew Helper(this);": (
+            "a main loop source this check cannot read"
+        ),
+        "this._laters = global.compositor.get_laters();\nthis._l = [this][0]._laters.add(0, f);": (
+            "a main loop source this check cannot read"
+        ),
+        "this._laters = global.compositor.get_laters();\nconst KEY = '_laters';\n"
+        "this._l = this[KEY].add(0, f);": "a main loop source this check cannot read",
+        # A name another module can import is reached where this file cannot see.
+        "export const laters = global.compositor.get_laters();\n"
+        "this._l = laters.add(0, f);\nlaters.remove(this._l);": (
+            "a main loop source this check cannot read"
+        ),
+        # Code run from a string, or loaded while the extension runs, is not read as code.
+        "eval(\"this._id = global.stage.connect('x', f);\");": "code this check cannot read",
+        "new Function(\"global.stage.connect('x', f);\")();": "code this check cannot read",
+        "const E = 'eval';\nglobalThis[E](\"global.stage.connect('x', f);\");": (
+            "code this check cannot read"
+        ),
+        "import('./probe.js');": "code this check cannot read",
         # allowKeybinding changes the modes a key of GNOME's runs in, until it is set back.
         "Main.wm.allowKeybinding('switch-applications', Shell.ActionMode.ALL);": (
             "a key binding this check cannot read"
@@ -575,10 +616,11 @@ def test_the_check_finds_what_disable_leaves_behind() -> None:
         global.compositor.get_laters().remove(this._broken);
         const wide = '\U0001d465'; const narrow = 'a';
         const connected = true;
-        this._held = global.compositor.get_laters();
-        this._heldLater = this._held.add(0, f);
-        this._held.remove(this._heldLater);
-        this._held = null;
+        const on = this._proxy.get_cached_property('Connected');
+        const again = this._settings.get_boolean('reconnect');
+        this._link = this._client.connect('connected', f);
+        this._client.disconnect(this._link);
+        const meta = import.meta.url;
         const action = global.display.get_keybinding_action(0, 0);
         this._enableLaters();
         this._disableLaters();
@@ -644,7 +686,6 @@ FAMILIES = (
     ("", "global", "setInterval"),
     ("", "global.compositor.get_laters()", "add"),
     ("const laters = global.compositor.get_laters();\n", "laters", "add"),
-    ("this._laters = global.compositor.get_laters();\n", "this._laters", "add"),
     ("", "Main.wm", "setCustomKeybindingHandler"),
     ("", "Meta", "keybindings_set_custom_handler"),
     ("", "Gio.DBus.session", "signal_subscribe"),
