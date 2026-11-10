@@ -42,10 +42,10 @@ radius, so zoomed text looked hand-lettered (issue #11).
 
 ### Consequences
 
-- Good: sharp text and lines at any zoom, at full frame rate (142 to 144 fps measured at
-  2560x1440 and 144 Hz zoomed over text, where GNOME's own scaling draws 144). Each pixel
-  keeps the ink it had, so strokes keep the font's weight, a serif font's thin strokes stay
-  thin, and square ends and corners stay square.
+- Good: sharp text and lines at any zoom, at full frame rate (140 to 144 fps measured at
+  2560x1440 and 144 Hz zoomed over text, as GNOME's own scaling draws in the same runs).
+  Each pixel keeps the ink it had, so strokes keep the font's weight, a serif font's thin
+  strokes stay thin, and square ends and corners stay square.
 - Bad: a tone estimate that changes from one output pixel to the next can show as an
   outline; the sparse ring can miss a one-pixel stem, so a stem split across two pixel
   columns near it is drawn pale.
