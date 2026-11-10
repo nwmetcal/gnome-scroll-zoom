@@ -7,7 +7,18 @@ from collections.abc import Callable
 import numpy as np
 import pytest
 
-from tests.images import Box, Gray, bar_heights, corner_gaps, crop, ink, ink_amount, shrunk
+from tests.images import (
+    Box,
+    Gray,
+    bar_heights,
+    broken_pieces,
+    corner_gaps,
+    crop,
+    far_from_ink,
+    ink,
+    ink_amount,
+    shrunk,
+)
 
 IMAGE = np.zeros((800, 1280))
 
@@ -108,3 +119,37 @@ def test_a_bar_drawn_wide_and_pale_is_not() -> None:
     unzoomed = 1 - drawn(bar, (6, 5))
     pale = np.repeat(np.repeat(unzoomed, 6, axis=0), 6, axis=1)
     assert all(abs(shown - meant) > 1 for shown, meant in bar_heights(unzoomed, pale, 6))
+
+
+def test_paper_far_from_ink_is_more_than_a_pixel_from_it() -> None:
+    t = np.zeros((5, 6))
+    t[2, 2] = 0.3
+    far = far_from_ink(t)
+    assert not far[1:4, 1:4].any()
+    assert far[0].all() and far[4].all() and far[:, 0].all() and far[:, 4:].all()
+
+
+def test_a_bar_inked_from_the_top_of_its_block_still_measures() -> None:
+    unzoomed = np.array([[0.0], [0.6], [0.0]])
+    zoomed = np.zeros((18, 6))
+    zoomed[0:12] = 1.0
+    [(shown, meant)] = bar_heights(unzoomed, zoomed, 6)
+    assert shown == pytest.approx(12.0, abs=0.01)
+    assert meant == pytest.approx(3.6)
+
+
+def u_shape(x: Gray, y: Gray) -> Gray:
+    sides = ((x >= 2) & (x < 4)) | ((x >= 8) & (x < 10))
+    return (((y >= 2) & (y < 10) & sides) | ((y >= 8) & (y < 10) & (x >= 2) & (x < 10))).astype(
+        float
+    )
+
+
+def test_a_letter_drawn_whole_has_no_broken_pieces() -> None:
+    assert broken_pieces(drawn(u_shape, (12, 12)), drawn(u_shape, (12, 12))) == []
+
+
+def test_a_letter_cut_through_is_broken_into_pieces() -> None:
+    cut = drawn(u_shape, (12, 12))
+    cut[:, 6] = 1.0
+    assert broken_pieces(drawn(u_shape, (12, 12)), cut) == [2]

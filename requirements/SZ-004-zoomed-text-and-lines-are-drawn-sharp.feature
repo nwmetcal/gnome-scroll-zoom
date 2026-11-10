@@ -29,6 +29,13 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
   1.5. Each pixel's ink kept, few in-between pixels, and thin bars as tall as their ink put
   each edge where the font put it, so a thin stroke cannot come out wide and pale.
 
+  A letter GNOME's blurry scaling draws in one piece of at least half ink is drawn in one
+  piece too, so a stem cut through or an arch parted from its stem shows.
+
+  The edge position the README offers for bolder or thinner text moves only the edges:
+  paper more than a pixel from any ink stays paper at the README's 0.55 as at the default
+  0.5. At 7x the zoomed view's pixel centres fall on screen pixels, which 4x and 6x step over.
+
   Scenario: Text has half the blur of GNOME's own zoom
     Given zoom is on at 4x over the test pattern
     When the zoomed screen is captured with sharp smoothing and with GNOME's standard scaling
@@ -72,3 +79,20 @@ Feature: SZ-004 Zoomed text and lines are drawn sharp
     And the serif line has at most a third as many in-between pixels as with GNOME's scaling
     And its thin bars at least half inked are drawn as tall as the font draws them, within 1 pixel on average
     And its thin bars' faint ends, under half inked, are drawn as tall as the font draws them, within 1 pixel on average
+
+  Scenario: Letters stay whole
+    Given zoom is on at 6x over the test pattern's text
+    When the zoomed screen is captured with sharp smoothing and with GNOME's standard scaling
+    Then every letter GNOME's scaling draws in one piece is drawn in one piece
+
+  Scenario Outline: Paper away from the text stays paper, bolder or not
+    Given the test pattern is captured unzoomed
+    And the edge position is set to <position>
+    And zoom is on at 7x over the test pattern's text
+    When the zoomed screen is captured with sharp smoothing
+    Then the paper over a pixel from the text's ink stays within 2/255 of paper
+
+    Examples:
+      | position |
+      | 0.5      |
+      | 0.55     |

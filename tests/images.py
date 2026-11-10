@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Measure zoomed screenshots: where a screen point lands, and how its pixels look."""
 
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -179,10 +180,12 @@ def shrunk(pixels: Gray, zoom: int) -> Gray:
 
 def _height(profile: Gray) -> float:
     """How tall the half-ink part of a profile of ink is, in pixels, between where it first
-    rises through half and where it last falls through it; 0 when it never reaches half."""
+    rises through half and where it last falls through it; 0 when it never reaches half.
+    Ink that runs off either end of the profile is taken as ending there."""
     if profile.max() < 0.5:
         return 0.0
-    return len(profile) - _rise(profile[::-1]) - _rise(profile)
+    padded = np.concatenate(([0.0], profile, [0.0]))
+    return len(padded) - _rise(padded[::-1]) - _rise(padded)
 
 
 def bar_heights(unzoomed: Gray, zoomed: Gray, zoom: int) -> list[tuple[float, float]]:
@@ -204,6 +207,58 @@ def bar_heights(unzoomed: Gray, zoomed: Gray, zoom: int) -> list[tuple[float, fl
                 drawn = float(np.mean([_height(block[:, k]) for k in range(zoom)]))
                 found.append((drawn, float(here) * zoom))
     return found
+
+
+def far_from_ink(t: Gray) -> NDArray[np.bool_]:
+    """Which pixels of an area, as ink (see `ink`), lie more than a pixel from any ink: no
+    pixel touching them, across or corner to corner, carries any."""
+    inked = np.pad(t > 0.01, 1)
+    height, width = t.shape
+    near = np.zeros((height, width), dtype=bool)
+    for dy in (0, 1, 2):
+        for dx in (0, 1, 2):
+            near |= inked[dy : dy + height, dx : dx + width]
+    return ~near
+
+
+def pieces(inked: NDArray[np.bool_]) -> NDArray[np.int_]:
+    """Each pixel's piece: the pixels inked, joined across their sides, numbered from 1; 0
+    where nothing is inked."""
+    found = np.zeros(inked.shape, dtype=int)
+    height, width = inked.shape
+    count = 0
+    for y, x in zip(*np.nonzero(inked), strict=True):
+        if found[y, x]:
+            continue
+        count += 1
+        found[y, x] = count
+        todo = deque([(int(y), int(x))])
+        while todo:
+            at_y, at_x = todo.popleft()
+            for ny, nx in ((at_y + 1, at_x), (at_y - 1, at_x), (at_y, at_x + 1), (at_y, at_x - 1)):
+                if 0 <= ny < height and 0 <= nx < width and inked[ny, nx] and not found[ny, nx]:
+                    found[ny, nx] = count
+                    todo.append((ny, nx))
+    return found
+
+
+def half_inked(pixels: Gray) -> NDArray[np.bool_]:
+    """The pixels of an area at least halfway from its lightest tone to its darkest."""
+    return pixels <= (float(pixels.max()) + float(pixels.min())) / 2
+
+
+def broken_pieces(reference: Gray, drawn: Gray) -> list[int]:
+    """For each piece of at least half ink in a reference drawing of an area that another
+    drawing of it covers with more than one piece of its own, how many: empty when every
+    piece of the reference is drawn whole."""
+    theirs = pieces(half_inked(reference))
+    ours = pieces(half_inked(drawn))
+    counts: list[int] = []
+    for piece in range(1, int(theirs.max()) + 1):
+        over = np.unique(ours[(theirs == piece) & (ours > 0)])
+        if len(over) > 1:
+            counts.append(len(over))
+    return counts
 
 
 def blocks_uniform(pixels: Gray, size: int) -> float:

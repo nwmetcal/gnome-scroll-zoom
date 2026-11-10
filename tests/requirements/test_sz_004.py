@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """SZ-004: zoomed text and lines are drawn sharp."""
 
+import time
+
 import numpy as np
 from pytest_bdd import given, parsers, scenarios, then, when
 
@@ -8,8 +10,10 @@ from tests.images import (
     Box,
     bar_heights,
     best_shift,
+    broken_pieces,
     corner_gaps,
     crop,
+    far_from_ink,
     in_between_fraction,
     ink,
     ink_amount,
@@ -18,6 +22,7 @@ from tests.images import (
 )
 from tests.requirements.conftest import (
     PATTERN_PARTS,
+    REPAINT_S,
     Scene,
     capture,
     pattern,
@@ -41,6 +46,12 @@ STEM_WIDTH = 1.0
 def captured_unzoomed(shell: Shell, scene: Scene) -> None:
     assert shell.state()["on"] is False
     capture(shell, scene, "unzoomed")
+
+
+@given(parsers.parse("the edge position is set to {position:g}"))
+def edge_position(shell: Shell, position: float) -> None:
+    shell.call(f"scrollZoomTest.settings().set_double('edge-position', {position}); return true;")
+    time.sleep(REPAINT_S)
 
 
 @when(parsers.parse("the zoomed screen is captured with {first} and with {second}"))
@@ -179,3 +190,25 @@ def bars_thin(shell: Shell, scene: Scene, bars: str, most: str) -> None:
     assert error <= float(most), (
         f"{len(heights)} {bars} drawn {error:.1f} pixels off their height on average"
     )
+
+
+@then(
+    parsers.parse("the paper over a pixel from the text's ink stays within {most:d}/255 of paper")
+)
+def paper_stays(shell: Shell, scene: Scene, most: int) -> None:
+    source = pattern_box(shell, "text")
+    unzoomed = crop(scene.image("unzoomed"), source)
+    zoomed = crop(scene.image("text"), scene.on_screen(source))
+    zoom = round(scene.zoom)
+    far = np.repeat(np.repeat(far_from_ink(ink(unzoomed)), zoom, axis=0), zoom, axis=1)
+    darker = (float(unzoomed.max()) - zoomed)[far] * 255
+    assert float(darker.max()) <= most, (
+        f"{int((darker > most).sum())} paper pixels drawn up to {float(darker.max()):.0f}/255 dark"
+    )
+
+
+@then("every letter GNOME's scaling draws in one piece is drawn in one piece")
+def letters_whole(shell: Shell, scene: Scene) -> None:
+    box = scene.on_screen(pattern_box(shell, "text"))
+    broken = broken_pieces(crop(scene.image("standard"), box), crop(scene.image("text"), box))
+    assert not broken, f"{len(broken)} letters drawn in {', '.join(map(str, broken))} pieces"
