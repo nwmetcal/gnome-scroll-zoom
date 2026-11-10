@@ -236,10 +236,11 @@ def swipe_and_back(shell: Shell, scene: Scene, up: int, back: int) -> None:
 )
 def level_then_notch(shell: Shell, scene: Scene, zoom: float, delay_ms: int) -> None:
     # GNOME's keyboard zoom and its slider set this level; the test shell runs no settings
-    # daemon. The mark tells the frames before the notch from those after it.
+    # daemon. The mark, just before the notch, tells the frames drawn before the notch came
+    # from those after it, as GNOME's glide still moves the pointer until then.
     record(shell)
     shell.call(f"{MAGNIFIER}.set_double('mag-factor', {zoom}); return true;")
-    steps = [step(delay_ms, "mark"), step(1, "press", "super"), step(20, "notch", 1)]
+    steps = [step(delay_ms, "press", "super"), step(20, "mark"), step(1, "notch", 1)]
     shell.run_steps([*steps, step(20, "release", "super")])
     time.sleep(0.2)
     shell.settle()
