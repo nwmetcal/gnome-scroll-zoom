@@ -8,7 +8,7 @@ your pointer, and keeps text sharp instead of blurry.
 
 ![Holding Super and scrolling zooms smoothly into a window of text, which stays sharp](docs/scroll-zoom-demo.gif)
 
-[**Download Scroll Zoom**](https://github.com/nwmetcal/gnome-scroll-zoom/releases/latest/download/scroll-zoom.shell-extension.zip) ·
+[**Install Scroll Zoom**](#install) ·
 [Project page](https://nwmetcal.github.io/gnome-scroll-zoom/) ·
 [Report a problem](https://github.com/nwmetcal/gnome-scroll-zoom/issues)
 
@@ -47,6 +47,45 @@ gnome-shell --version
 
 ## Install
 
+### From extensions.gnome.org, which keeps it up to date
+
+1. Install **Extension Manager**, if you don't have it. On Ubuntu, run:
+
+   ```bash
+   sudo apt install gnome-shell-extension-manager
+   ```
+
+   On other systems, get it from
+   [Flathub](https://flathub.org/apps/com.mattjakeman.ExtensionManager).
+2. Open **Extension Manager**, choose **Browse**, and search for **Scroll Zoom**.
+3. Choose **Install…**, then **Install** when GNOME asks. It starts right away, with no
+   need to log out.
+
+That's it: hold **Super**, the key with the Windows logo on most keyboards, and scroll.
+
+You can also install it from [extensions.gnome.org](https://extensions.gnome.org/) in your
+web browser: search for Scroll Zoom there and switch it on, with the GNOME Shell
+integration add-on the site offers.
+
+### How updates arrive
+
+- Each time you log in, and once a day after that, GNOME asks extensions.gnome.org for a
+  newer Scroll Zoom that runs on your version of GNOME.
+- When there is one, GNOME downloads it and shows a notification, **Extension Updates
+  Available**. The Extensions app says the extension will be updated on next login.
+- The new version starts the next time you log in. There is nothing to click or install.
+- GNOME looks for updates only while **Extension Manager** or the **Extensions** app is
+  installed, so keep one of them.
+- A new version reaches extensions.gnome.org once the site's reviewers have checked it,
+  which can take a few days.
+- After you upgrade GNOME, Scroll Zoom stays off until a version for the new GNOME is out.
+  GNOME then installs it at a login, on its own.
+
+### From the release zip, which does not update itself
+
+A copy installed this way, or from the source code, never updates itself: to get a new
+version, you download and install it again.
+
 1. [Download the extension](https://github.com/nwmetcal/gnome-scroll-zoom/releases/latest/download/scroll-zoom.shell-extension.zip).
    It saves to your Downloads folder.
 2. Install it:
@@ -55,14 +94,20 @@ gnome-shell --version
    gnome-extensions install --force ~/Downloads/scroll-zoom.shell-extension.zip
    ```
 
-3. **Log out and log back in.** GNOME only loads new extensions when you log in.
+3. **Log out and log back in.** GNOME only loads extensions installed this way when you log
+   in.
 4. Open the **Extensions** app and switch on **Scroll Zoom**, or run:
 
    ```bash
    gnome-extensions enable scroll-zoom@nhicc
    ```
 
-That's it: hold **Super**, the key with the Windows logo on most keyboards, and scroll.
+To switch to a copy that updates itself, uninstall this one, install Scroll Zoom from
+extensions.gnome.org as above, then log out and back in:
+
+```bash
+gnome-extensions uninstall scroll-zoom@nhicc
+```
 
 <details>
 <summary>Install from the source code instead</summary>
@@ -73,7 +118,8 @@ cd gnome-scroll-zoom
 make install
 ```
 
-Then log out and back in. `make install` switches the extension on for you.
+Then log out and back in. `make install` switches the extension on for you. For a new
+version, run `git pull` and `make install` again, and log out and back in.
 
 </details>
 
@@ -158,7 +204,8 @@ soft the edges are, in screen pixels.
 <summary><b>Does it work on other GNOME versions, or on X11?</b></summary>
 
 It's built and tested on GNOME 50 under Wayland. GNOME switches off extensions that don't
-list your version. Support for new versions is added once its tests pass on them.
+list your version. Support for new versions is added once its tests pass on them, and a copy
+installed from extensions.gnome.org then updates itself to it.
 
 </details>
 

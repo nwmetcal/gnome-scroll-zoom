@@ -1,10 +1,25 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Measuring screenshots: a crop is wholly on the image or an error."""
+"""Measuring screenshots: a crop is wholly on the image or an error, and shapes measure as
+they are drawn."""
+
+from collections.abc import Callable
 
 import numpy as np
 import pytest
 
-from tests.images import Box, crop
+from tests.images import (
+    Box,
+    Gray,
+    bar_heights,
+    broken_pieces,
+    corner_gaps,
+    crop,
+    far_from_ink,
+    ink,
+    ink_amount,
+    inside_corner_gap,
+    shrunk,
+)
 
 IMAGE = np.zeros((800, 1280))
 
@@ -25,3 +40,142 @@ def test_a_box_on_the_image_crops_to_its_size() -> None:
 def test_a_box_not_wholly_on_the_image_is_an_error(box: Box) -> None:
     with pytest.raises(ValueError, match="not wholly on"):
         crop(IMAGE, box)
+
+
+def drawn(inked: Callable[[Gray, Gray], Gray], size: tuple[int, int], zoom: float = 1) -> Gray:
+    """A shape drawn on white paper in black at a zoom, each pixel the share of it the shape
+    covers, from 4 by 4 samples. The shape takes points in pixels before zooming."""
+    width, height = size
+    x, y = np.meshgrid((np.arange(width * 4) + 0.5) / 4, (np.arange(height * 4) + 0.5) / 4)
+    covered = inked(x / zoom, y / zoom).reshape(height, 4, width, 4)
+    return 1.0 - covered.mean(axis=(1, 3))
+
+
+def square(x: Gray, y: Gray) -> Gray:
+    return ((x >= 10) & (x < 40) & (y >= 12) & (y < 50)).astype(float)
+
+
+def rounded(radius: float) -> Callable[[Gray, Gray], Gray]:
+    def inked(x: Gray, y: Gray) -> Gray:
+        cx = np.clip(x, 10 + radius, 40 - radius)
+        cy = np.clip(y, 12 + radius, 50 - radius)
+        near = (x - cx) ** 2 + (y - cy) ** 2 <= radius**2
+        return ((square(x, y) > 0) & near).astype(float)
+
+    return inked
+
+
+def test_ink_runs_from_the_paper_to_the_darkest_tone() -> None:
+    pixels = np.array([[1.0, 0.55, 0.1]])
+    assert ink(pixels)[0].tolist() == pytest.approx([0.0, 0.5, 1.0])
+
+
+def test_a_wider_stroke_carries_more_ink() -> None:
+    def thin(x: Gray, y: Gray) -> Gray:
+        return ((x >= 10) & (x < 16)).astype(float)
+
+    def wide(x: Gray, y: Gray) -> Gray:
+        return ((x >= 10) & (x < 19)).astype(float)
+
+    assert ink_amount(drawn(wide, (40, 20))) == pytest.approx(
+        1.5 * ink_amount(drawn(thin, (40, 20)))
+    )
+
+
+def test_a_crisp_right_angle_has_no_gap_at_its_corners() -> None:
+    assert max(corner_gaps(ink(drawn(square, (50, 60))))) < 0.5
+
+
+@pytest.mark.parametrize("radius", [3.0, 6.0])
+def test_a_rounded_corner_is_its_radius_times_0_41_in(radius: float) -> None:
+    gaps = corner_gaps(ink(drawn(rounded(radius), (50, 60))))
+    assert gaps == pytest.approx([radius * (2**0.5 - 1)] * 4, abs=0.4)
+
+
+def test_a_view_shrunk_back_is_the_mean_of_each_block() -> None:
+    view: Gray = np.repeat(np.repeat(np.array([[0.0, 1.0], [0.5, 0.25]]), 3, axis=0), 3, axis=1)
+    view[0, 0] = 0.9
+    assert shrunk(view, 3).ravel().tolist() == pytest.approx([0.1, 1.0, 0.5, 0.25])
+
+
+def test_a_view_not_in_whole_blocks_is_an_error() -> None:
+    with pytest.raises(ValueError, match="not whole blocks"):
+        shrunk(np.zeros((7, 9)), 3)
+
+
+def bar(x: Gray, y: Gray) -> Gray:
+    """A flat bar half a pixel tall inside one row of pixels, 4 pixels long."""
+    return ((x >= 1) & (x < 5) & (y >= 2.25) & (y < 2.75)).astype(float)
+
+
+def test_a_crisp_bar_is_drawn_as_tall_as_its_ink() -> None:
+    unzoomed = 1 - drawn(bar, (6, 5))
+    zoomed = 1 - drawn(bar, (36, 30), zoom=6)
+    heights = bar_heights(unzoomed, zoomed, 6)
+    assert len(heights) == 4
+    assert all(abs(shown - meant) < 0.1 for shown, meant in heights)
+
+
+def test_a_bar_drawn_wide_and_pale_is_not() -> None:
+    unzoomed = 1 - drawn(bar, (6, 5))
+    pale = np.repeat(np.repeat(unzoomed, 6, axis=0), 6, axis=1)
+    assert all(abs(shown - meant) > 1 for shown, meant in bar_heights(unzoomed, pale, 6))
+
+
+def test_paper_far_from_ink_is_more_than_a_pixel_from_it() -> None:
+    t = np.zeros((5, 6))
+    t[2, 2] = 0.3
+    far = far_from_ink(t)
+    assert not far[1:4, 1:4].any()
+    assert far[0].all() and far[4].all() and far[:, 0].all() and far[:, 4:].all()
+
+
+def test_a_bar_inked_from_the_top_of_its_block_still_measures() -> None:
+    unzoomed = np.array([[0.0], [0.6], [0.0]])
+    zoomed = np.zeros((18, 6))
+    zoomed[0:12] = 1.0
+    [(shown, meant)] = bar_heights(unzoomed, zoomed, 6)
+    assert shown == pytest.approx(12.0, abs=0.01)
+    assert meant == pytest.approx(3.6)
+
+
+def u_shape(x: Gray, y: Gray) -> Gray:
+    sides = ((x >= 2) & (x < 4)) | ((x >= 8) & (x < 10))
+    return (((y >= 2) & (y < 10) & sides) | ((y >= 8) & (y < 10) & (x >= 2) & (x < 10))).astype(
+        float
+    )
+
+
+def test_a_letter_drawn_whole_has_no_broken_pieces() -> None:
+    assert broken_pieces(drawn(u_shape, (12, 12)), drawn(u_shape, (12, 12))) == []
+
+
+def test_a_letter_cut_through_is_broken_into_pieces() -> None:
+    cut = drawn(u_shape, (12, 12))
+    cut[:, 6] = 1.0
+    assert broken_pieces(drawn(u_shape, (12, 12)), cut) == [2]
+
+
+def ell(fillet: float) -> Callable[[Gray, Gray], Gray]:
+    """An L, its upright 12 wide and its foot 12 tall, with its inside corner filled to a
+    radius."""
+
+    def inked(x: Gray, y: Gray) -> Gray:
+        upright = (x >= 10) & (x < 22) & (y >= 8) & (y < 60)
+        foot = (x >= 10) & (x < 52) & (y >= 48) & (y < 60)
+        cx, cy = 22 + fillet, 48 - fillet
+        corner = (x >= 22) & (x < cx) & (y >= cy) & (y < 48)
+        filled = corner & ((x - cx) ** 2 + (y - cy) ** 2 >= fillet**2)
+        return (upright | foot | filled).astype(float)
+
+    return inked
+
+
+def test_a_crisp_inside_corner_has_no_gap() -> None:
+    assert inside_corner_gap(ink(drawn(ell(0.0), (60, 66)))) < 0.5
+
+
+@pytest.mark.parametrize("radius", [3.0, 6.0])
+def test_a_filled_inside_corner_is_its_radius_times_0_41_out(radius: float) -> None:
+    gap = inside_corner_gap(ink(drawn(ell(radius), (60, 66))))
+    assert gap == pytest.approx(radius * (2**0.5 - 1), abs=0.4)

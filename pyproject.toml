@@ -43,5 +43,5 @@ addopts = "-ra"
 markers = [
     "invariant: holds on every change",
     "golden: compares what the extension draws with a known answer",
-    "shell: needs the private headless GNOME Shell 50 (pytest --shell)",
+    "shell: needs the private headless GNOME Shell (pytest --shell)",
 ]
