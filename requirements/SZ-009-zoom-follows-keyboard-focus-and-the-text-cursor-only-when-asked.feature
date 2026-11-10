@@ -7,26 +7,35 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
   following keyboard focus and following the text cursor are two settings of its own, both
   off until the person turns them on, whatever GNOME's own settings for them say, and a
   change to GNOME's own settings while Scroll Zoom is on does not bring them back. Turned on,
-  each brings the focus or the text cursor into view, moving the view only as far as that
-  takes, so what was in view stays close by, and leaves the other kind of move alone. Scroll
-  Zoom leaves GNOME's own settings for following as they are, and turning Scroll Zoom off
-  hands GNOME's own following back.
+  each brings the whole of the focused control or the text cursor into view, from any side and
+  each time it moves, moving the view only as far as that takes, so what was in view stays
+  close by, and leaves the other kind of move alone. A follow GNOME was holding back when
+  following is turned off, or when Scroll Zoom comes on, never lands, and Scroll Zoom coming
+  on, at login or as the screen unlocks, undoes the following GNOME's settings asked for before
+  it. Scroll Zoom leaves GNOME's own settings for following as they are, and turning Scroll
+  Zoom off hands GNOME's own following back.
 
   The test app fills the screen. Its first button is at the top left, under the view the
-  pointer puts at 200, 130 at 3x. Its middle button, whose middle is at 760, 400, and its line
-  of text, two characters whose cells cover 740 to 756 across and 560 to 576 down in the test
-  shell's monospace font, are out of that view and clear of the screen's edges. GNOME follows
-  focus and the text cursor unless told otherwise; these scenarios set its own settings to
-  centre the view on them, the easiest place to measure. The test shell's pointer following
-  is GNOME's "centered", so the view the pointer at 200, 130 puts is the screen's top-left
-  corner, within 2 pixels for the rounding of where the view sits. The view is watched for
-  3 s, three times as long as GNOME waits.
+  pointer puts at 200, 130 at 3x. Its middle button, covering 700 to 820 across and 380 to 420
+  down, whose middle is at 760, 400, and its line of text, two characters whose cells cover
+  740 to 756 across and 560 to 576 down in the test shell's monospace font, are out of that
+  view and clear of the screen's edges, below and to the right of it. The view the pointer
+  puts at 1000, 600 has the middle button above and to the left of it. GNOME follows focus and
+  the text cursor unless told otherwise; these scenarios set its own settings to centre the
+  view on them, the easiest place to measure. The test shell's pointer following is GNOME's
+  "centered", so the view the pointer at 200, 130 puts is the screen's top-left corner, and
+  at 1000, 600 the view's middle is the pointer, each within 2 pixels for the rounding of where
+  the view sits. The view is watched for 3 s, three times as long as GNOME waits.
+
+  GNOME holds a follow back while the pointer has moved in the last second. A pointer moving 2
+  pixels back and forth every 50 ms, as a resting hand does, keeps it held, so these scenarios
+  turn following off, or Scroll Zoom on, as such a pointer stops.
 
   A view's overshoot is how much further it moved, across and down, than showing the focus or
   the text cursor takes. A view brought to either and no further shows it, overshooting by at
-  most 60 pixels: half the middle button's width, the room a view that shows the whole button
-  leaves past its middle, and more than the 24 pixels GNOME leaves for the pointer when it
-  pushes the view. A view centred on either overshoots by more than 110 pixels each way.
+  most 60 pixels: room for a margin around what it shows, such as the 24 pixels GNOME leaves
+  for the pointer when it pushes the view. A view centred on either overshoots by more than
+  110 pixels each way.
   GNOME centres the view on the top-left corner of the text cursor's cell, up to 8 pixels
   from the middle of the line's text, so a view centred on the text cursor is within 10
   pixels of that middle.
@@ -67,8 +76,26 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
     And the focus test app is open with its first button focused
     And zoom is on at 3x with the pointer at 200, 130
     When Tab moves keyboard focus to the middle button
-    Then after 3 s the view shows the middle button's middle, overshooting by at most 60 pixels
+    Then after 3 s the view shows the middle button whole, overshooting by at most 60 pixels
     And GNOME's own settings still centre the view on keyboard focus and on the text cursor
+
+  Scenario: Following keyboard focus, turned on, brings it into view above and to the left too
+    Given GNOME's own settings centre the view on keyboard focus and on the text cursor
+    And following keyboard focus is turned on in Scroll Zoom's settings
+    And the focus test app is open with its first button focused
+    And zoom is on at 3x with the pointer at 1000, 600
+    When Tab moves keyboard focus to the middle button
+    Then after 3 s the view shows the middle button whole, overshooting by at most 60 pixels
+    And GNOME's own settings still centre the view on keyboard focus and on the text cursor
+
+  Scenario: Following keyboard focus, turned on, follows focus back to a control it followed before
+    Given following keyboard focus is turned on in Scroll Zoom's settings
+    And the focus test app is open with its first button focused
+    And zoom is on at 3x with the pointer at 200, 130
+    When Tab moves keyboard focus to the middle button
+    And zoom goes off, Shift+Tab moves focus back to the first button, and zoom comes on again
+    And Tab moves keyboard focus to the middle button
+    Then after 3 s the view shows the middle button whole, overshooting by at most 60 pixels
 
   Scenario: Following the text cursor, turned on, brings it into view and no further
     Given GNOME's own settings centre the view on keyboard focus and on the text cursor
@@ -84,7 +111,7 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
     And zoom is on at 3x with the pointer at 200, 130
     When GNOME's own settings change to centre the view on keyboard focus and on the text cursor
     And Tab moves keyboard focus to the middle button
-    Then after 3 s the view shows the middle button's middle, overshooting by at most 60 pixels
+    Then after 3 s the view shows the middle button whole, overshooting by at most 60 pixels
     And GNOME's own settings still centre the view on keyboard focus and on the text cursor
 
   Scenario: Following the text cursor, turned on, goes no further after GNOME's own settings change
@@ -94,6 +121,15 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
     When GNOME's own settings change to follow keyboard focus and the text cursor in proportion
     Then after 3 s the view shows the line's text whole, overshooting by at most 60 pixels
     And GNOME's own settings still follow keyboard focus and the text cursor in proportion
+
+  Scenario: Following keyboard focus, turned on and off again, leaves focus unfollowed
+    Given GNOME's own settings centre the view on keyboard focus and on the text cursor
+    And following keyboard focus is turned on in Scroll Zoom's settings
+    And following keyboard focus is turned off in Scroll Zoom's settings
+    And the focus test app is open with its first button focused
+    And zoom is on at 3x with the pointer at 200, 130
+    When Tab moves keyboard focus to the middle button
+    Then for 3 s every frame has the view where the pointer puts it, within 2 pixels
 
   Scenario: Following keyboard focus, turned on, leaves an app's own text cursor unfollowed
     Given GNOME's own settings centre the view on keyboard focus and on the text cursor
@@ -126,3 +162,34 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
     When the extension is turned off
     Then after 3 s the view is centred on the line's text, within 10 pixels
     And GNOME's own settings still centre the view on keyboard focus and on the text cursor
+
+  Scenario: Following the text cursor, turned off while a follow is held, leaves the view alone
+    Given the focus test app is open, moving the text cursor in its line on its own
+    And zoom is on at 3x with the pointer at 200, 130
+    When following the text cursor is on while the pointer moves for 1500 ms, then off
+    Then for 3 s every frame has the view where the pointer puts it, within 2 pixels
+
+  Scenario: Turning the extension on while GNOME holds a follow leaves the view with the pointer
+    Given GNOME's own settings centre the view on keyboard focus and on the text cursor
+    And the focus test app is open, moving the text cursor in its line on its own
+    And zoom is on at 3x with the pointer at 200, 130
+    When the extension is turned off as the pointer moves for 1500 ms, and on as it stops
+    Then for 3 s every frame has the view where the pointer puts it, within 2 pixels
+    And GNOME's own settings still centre the view on keyboard focus and on the text cursor
+
+  Scenario: Scroll Zoom coming on undoes GNOME's own following of focus
+    Given the extension is turned off
+    And GNOME's own settings centre the view on keyboard focus and on the text cursor
+    And the extension is turned on
+    And the focus test app is open with its first button focused
+    And zoom is on at 3x with the pointer at 200, 130
+    When Tab moves keyboard focus to the middle button
+    Then for 3 s every frame has the view where the pointer puts it, within 2 pixels
+
+  Scenario: Scroll Zoom coming on undoes GNOME's own following of the text cursor
+    Given the extension is turned off
+    And GNOME's own settings centre the view on keyboard focus and on the text cursor
+    And the extension is turned on
+    And the focus test app is open, moving the text cursor in its line on its own
+    And zoom is on at 3x with the pointer at 200, 130
+    Then for 3 s every frame has the view where the pointer puts it, within 2 pixels

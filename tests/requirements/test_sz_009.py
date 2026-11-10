@@ -22,6 +22,7 @@ UUID = "scroll-zoom@nhicc"
 # accessibility places them in the test shell's monospace font, where the text cursor sits.
 TARGETS = {
     "middle button's middle": (760.0, 400.0, 0.0, 0.0),
+    "middle button whole": (700.0, 380.0, 120.0, 40.0),
     "line's text whole": (740.0, 560.0, 16.0, 16.0),
     "line's text": (740.0, 560.0, 16.0, 16.0),
 }
@@ -33,6 +34,10 @@ GNOME_FOLLOWING = {
     "push the view to keyboard focus and to the text cursor": "push",
     "follow keyboard focus and the text cursor in proportion": "proportional",
 }
+# A resting hand moves the pointer a little now and then; this keeps GNOME holding a follow
+# back, since it waits for the pointer to rest 1000 ms.
+WIGGLE_PX = 2
+WIGGLE_GAP_MS = 50
 # Long enough for a new GTK window to give its widget focus and show it to GNOME's
 # accessibility, so the scenario's own Tab is the first focus change zoom sees.
 APP_READY_S = 1.0
@@ -113,12 +118,42 @@ def gnome_centres(shell: Shell) -> None:
     set_gnome_following(shell, "centered")
 
 
-@given(parsers.parse("following {what} is turned on in Scroll Zoom's settings"))
-def follow_on(shell: Shell, what: str) -> None:
+def switch(shell: Shell, what: str) -> str:
+    """The key of Scroll Zoom's switch for following `what`, which must exist."""
     key = SWITCHES[what]
     has = shell.call(f"return scrollZoomTest.settings().settings_schema.has_key('{key}');")
     assert has, f"Scroll Zoom has no setting for following {what}"
-    shell.call(f"scrollZoomTest.settings().set_boolean('{key}', true); return true;")
+    return key
+
+
+@given(parsers.parse("following {what} is turned {state} in Scroll Zoom's settings"))
+def follow_switch(shell: Shell, what: str, state: str) -> None:
+    value = {"on": "true", "off": "false"}[state]
+    shell.call(
+        f"scrollZoomTest.settings().set_boolean('{switch(shell, what)}', {value}); return true;"
+    )
+
+
+@given("the extension is turned off")
+def given_off(shell: Shell) -> None:
+    shell.call(f"Main.extensionManager.disableExtension('{UUID}'); return true;")
+    shell.wait_until("scrollZoomTest.state().extension !== 1")
+
+
+@given("the extension is turned on")
+def given_on(shell: Shell) -> None:
+    shell.call(f"Main.extensionManager.enableExtension('{UUID}'); return true;")
+    shell.wait_until("scrollZoomTest.state().extension === 1")
+
+
+def wiggle(pointer: tuple[float, float], duration_ms: int) -> list[list[Json]]:
+    """Moves of the pointer 2 pixels back and forth every 50 ms, ending where it began."""
+    x, y = pointer
+    count = duration_ms // WIGGLE_GAP_MS
+    return [
+        step(WIGGLE_GAP_MS, "moveTo", x + (WIGGLE_PX if i % 2 == 0 else 0), y)
+        for i in range(count - count % 2)
+    ]
 
 
 @given("the focus test app is open with its first button focused")
@@ -152,6 +187,50 @@ def tab(shell: Shell, watch: Watch) -> None:
 @when(parsers.parse("GNOME's own settings change to {how}"))
 def gnome_changes(shell: Shell, watch: Watch, how: str) -> None:
     set_gnome_following(shell, GNOME_FOLLOWING[how])
+    watch.since = time.monotonic()
+
+
+@when("zoom goes off, Shift+Tab moves focus back to the first button, and zoom comes on again")
+def zoom_off_and_back(shell: Shell, scene: Scene, watch: Watch) -> None:
+    shell.call(
+        "new imports.gi.Gio.Settings({schema_id: 'org.gnome.desktop.a11y.applications'})"
+        ".set_boolean('screen-magnifier-enabled', false); return true;"
+    )
+    shell.wait_until("!scrollZoomTest.state().on")
+    shell.run_steps(
+        [step(20, "press", "shift"), step(20, "press", "tab")]
+        + [step(20, "release", "tab"), step(20, "release", "shift")]
+    )
+    time.sleep(APP_READY_S)
+    zoom_to(shell, scene, scene.zoom, scene.pointer)
+    watch.since = time.monotonic()
+    watch.start = pointer_view(scene.zoom, scene.pointer)
+
+
+@when(
+    parsers.parse("following {what} is on while the pointer moves for {duration_ms:d} ms, then off")
+)
+def follow_while_moving(
+    shell: Shell, scene: Scene, watch: Watch, what: str, duration_ms: int
+) -> None:
+    key = switch(shell, what)
+    steps = [step(1, "setBoolean", key, True), *wiggle(scene.pointer, duration_ms)]
+    shell.run_steps([*steps, step(1, "setBoolean", key, False)], timeout_s=duration_ms / 1000 + 5)
+    watch.since = time.monotonic()
+
+
+@when(
+    parsers.parse(
+        "the extension is turned off as the pointer moves for {duration_ms:d} ms, "
+        "and on as it stops"
+    )
+)
+def off_while_moving(shell: Shell, scene: Scene, watch: Watch, duration_ms: int) -> None:
+    moves = wiggle(scene.pointer, duration_ms)
+    # The pointer is already moving as the extension goes off, so GNOME holds what it follows.
+    steps = [*moves[:2], step(1, "disableExtension"), *moves[2:], step(1, "enableExtension")]
+    shell.run_steps(steps, timeout_s=duration_ms / 1000 + 5)
+    shell.wait_until("scrollZoomTest.state().extension === 1")
     watch.since = time.monotonic()
 
 

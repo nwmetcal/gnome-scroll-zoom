@@ -133,6 +133,19 @@
             return extension().stateObj.getSettings();
         },
 
+        // A switch of the extension's own, as a run step, so it can change between timed moves.
+        setBoolean(key, value) {
+            this.settings().set_boolean(key, value);
+        },
+
+        disableExtension() {
+            Main.extensionManager.disableExtension(UUID);
+        },
+
+        enableExtension() {
+            Main.extensionManager.enableExtension(UUID);
+        },
+
         windows() {
             return global.get_window_actors().map(actor => actor.meta_window.get_title());
         },
