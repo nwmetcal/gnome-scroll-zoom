@@ -20,6 +20,7 @@
         shift: Clutter.KEY_Shift_L,
         backslash: Clutter.KEY_backslash,
         return: Clutter.KEY_Return,
+        tab: Clutter.KEY_Tab,
     };
 
     // Where the test pattern sits on screen, and what is in it, in stage pixels
@@ -154,7 +155,8 @@
         },
 
         // A known starting point: zoom off, GNOME's level at 2x, the view
-        // centred on the pointer, and the extension at its defaults.
+        // centred on the pointer, GNOME's following of focus and the text cursor at its
+        // defaults, and the extension at its defaults.
         reset() {
             if (this._paintId)
                 this.stopRecording();
@@ -164,6 +166,8 @@
             const gio = imports.gi.Gio;
             const magnifier = new gio.Settings({schema_id: 'org.gnome.desktop.a11y.magnifier'});
             magnifier.set_string('mouse-tracking', 'centered');
+            magnifier.reset('focus-tracking');
+            magnifier.reset('caret-tracking');
             new gio.Settings({schema_id: 'org.gnome.desktop.a11y.applications'})
                 .set_boolean('screen-magnifier-enabled', false);
             Main.magnifier.setActive(false);
@@ -172,6 +176,9 @@
             // session does, so none inherits the last one's pointer.
             Main.magnifier.xMouse = undefined;
             Main.magnifier.yMouse = undefined;
+            // Its zoom region skips a focus change or a text cursor move to where it saw the
+            // last one, so clear those as a fresh session starts.
+            Object.assign(region(), {_xFocus: 0, _yFocus: 0, _xCaret: 0, _yCaret: 0});
             magnifier.set_double('mag-factor', 2.0);
             Main.overview.hide();
             for (const key of Object.keys(KEYS))
