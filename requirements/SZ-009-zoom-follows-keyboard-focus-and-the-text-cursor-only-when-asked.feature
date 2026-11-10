@@ -150,6 +150,37 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
     Then after 3 s the view shows the line's text whole, overshooting by at most 60 pixels
     And GNOME's own settings still follow keyboard focus and the text cursor in proportion
 
+  Scenario: Following keyboard focus, turned on, follows it though GNOME's settings follow nothing
+    Given GNOME's own settings follow neither keyboard focus nor the text cursor
+    And following keyboard focus is turned on in Scroll Zoom's settings
+    And the focus test app is open with its first button focused
+    And zoom is on at 3x with the pointer at 200, 130
+    When Tab moves keyboard focus to the middle button
+    Then after 3 s the view shows the middle button whole, overshooting by at most 60 pixels
+    And GNOME's own settings still follow neither keyboard focus nor the text cursor
+
+  Scenario: Following keyboard focus, turned on, still follows once GNOME's settings follow nothing
+    Given following keyboard focus is turned on in Scroll Zoom's settings
+    And the focus test app is open with its first button focused
+    And zoom is on at 3x with the pointer at 200, 130
+    When GNOME's own settings change to follow neither keyboard focus nor the text cursor
+    And Tab moves keyboard focus to the middle button
+    Then after 3 s the view shows the middle button whole, overshooting by at most 60 pixels
+
+  Scenario: Following the text cursor, turned on, follows it though GNOME's settings follow nothing
+    Given GNOME's own settings follow neither keyboard focus nor the text cursor
+    And following the text cursor is turned on in Scroll Zoom's settings
+    And the focus test app is open, moving the text cursor in its line on its own
+    And zoom is on at 3x with the pointer at 200, 130
+    Then after 3 s the view shows the line's text whole, overshooting by at most 60 pixels
+    And GNOME's own settings still follow neither keyboard focus nor the text cursor
+
+  Scenario: Following the text cursor, turned on, brings it into view above and to the left too
+    Given following the text cursor is turned on in Scroll Zoom's settings
+    And the focus test app is open, moving the text cursor in its line on its own
+    And zoom is on at 3x with the pointer at 1000, 600
+    Then after 3 s the view shows the line's text whole, overshooting by at most 60 pixels
+
   Scenario: Following keyboard focus, turned on and off again, leaves focus unfollowed
     Given GNOME's own settings centre the view on keyboard focus and on the text cursor
     And following keyboard focus is turned on in Scroll Zoom's settings
