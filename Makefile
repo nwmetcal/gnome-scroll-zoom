@@ -2,6 +2,8 @@
 UUID := scroll-zoom@nhicc
 BASE ?= origin/main
 HEAD ?= HEAD
+# Not ZIP: zip reads its default options from that variable in its environment.
+BUNDLE ?= build/scroll-zoom.shell-extension.zip
 PYTHON_DIRS := tests tools dev
 
 .PHONY: setup check lint types test test-shell format check-commits check-intent pr-fetch \
@@ -25,7 +27,8 @@ types:
 test:
 	uv run pytest
 
-# The same tests and the @shell scenarios, in a private headless GNOME Shell 50.
+# The same tests and the @shell scenarios, in a private headless GNOME Shell of a major
+# metadata.json lists.
 test-shell: lint types
 	uv run pytest --shell
 
@@ -56,12 +59,13 @@ check-review:
 install:
 	./install.sh
 
-# The bundle people download, for `gnome-extensions install`, which compiles its schema.
+# The bundle people download, for `gnome-extensions install`, which compiles its schema, and
+# the one extensions.gnome.org takes.
 zip:
-	mkdir -p build
-	rm -f build/scroll-zoom.shell-extension.zip
-	cd $(UUID) && zip -qrD ../build/scroll-zoom.shell-extension.zip . -x 'schemas/gschemas.compiled'
-	@ls -l build/scroll-zoom.shell-extension.zip
+	mkdir -p $(dir $(BUNDLE))
+	rm -f $(BUNDLE)
+	cd $(UUID) && zip -qrD $(abspath $(BUNDLE)) . -x 'schemas/gschemas.compiled'
+	@ls -l $(BUNDLE)
 
 clean:
 	rm -rf build

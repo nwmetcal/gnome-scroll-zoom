@@ -76,8 +76,11 @@ EOF
     cp -r "$REPO/$UUID" "$ROOT/data/gnome-shell/extensions/"
     glib-compile-schemas "$ROOT/data/gnome-shell/extensions/$UUID/schemas"
     mkdir -p "$ROOT/data/gnome-shell/extensions/$HELPER"
+    # The helper loads on each GNOME Shell the extension under test lists, and on no other.
+    local versions
+    versions="$(python3 -I -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1]))["shell-version"]))' "$REPO/$UUID/metadata.json")"
     cat > "$ROOT/data/gnome-shell/extensions/$HELPER/metadata.json" <<EOF
-{"uuid": "$HELPER", "name": "Test unsafe mode", "description": "Test shell only", "shell-version": ["50"]}
+{"uuid": "$HELPER", "name": "Test unsafe mode", "description": "Test shell only", "shell-version": $versions}
 EOF
     cat > "$ROOT/data/gnome-shell/extensions/$HELPER/extension.js" <<'EOF'
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';

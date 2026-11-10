@@ -10,7 +10,7 @@ from pytest_bdd.scenario import scenario_wrapper_template_registry
 from pytest_bdd.utils import registry_get_safe
 
 from tests.paths import BUILD, ROOT
-from tests.shell import Shell, gnome_shell_50, new_root
+from tests.shell import Shell, gnome_shell_refusal, new_root
 
 ID = re.compile(r"^(SZ-\d{3}) \S")
 KINDS = {"invariant", "golden"}
@@ -35,7 +35,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--shell",
         action="store_true",
-        help="also run the scenarios tagged @shell, in a private headless GNOME Shell 50",
+        help="also run the scenarios tagged @shell, in a private headless GNOME Shell",
     )
 
 
@@ -118,8 +118,8 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 @pytest.fixture(scope="session")
 def test_shell() -> Generator[Shell]:
     """One private test shell for the whole run."""
-    if not gnome_shell_50():
-        pytest.fail("the @shell scenarios need GNOME Shell 50 on this machine")
+    if (refusal := gnome_shell_refusal()) is not None:
+        pytest.fail(refusal)
     shell = Shell(new_root())
     try:
         shell.start()

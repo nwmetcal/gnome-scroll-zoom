@@ -39,7 +39,8 @@ task list and mark a step you skip `skip: <reason>`.
    `make test-shell` twice at once, as a review round's reviewers do, and both must pass.
    Wait for CI's `check` and `intent` to pass. When a job fails, read its log first: a
    failure in code the change touches gets a commit; a flake gets one rerun, and a second
-   identical failure is not one.
+   identical failure is not one. After bringing main into the branch, reread the description
+   against what came in: what it lists, the steps it gives, and the version it names.
 7. **Review round.** `make pr-fetch PR=<n>`, then `make loop-brief`. For each lens it names,
    spawn a fresh `reviewer` agent (`.claude/agents/reviewer.md`), all at once, each with the
    brief below. Check each review it returns with `make check-review REVIEW=<file>`, and post

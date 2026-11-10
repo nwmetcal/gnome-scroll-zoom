@@ -56,10 +56,24 @@ body of `-` bullets. The commit-msg hook checks them; `make check-commits` check
 ## Releases
 
 Push a tag `vX.Y.Z` matching `version-name` in `scroll-zoom@nhicc/metadata.json`. The
-`release` workflow builds `scroll-zoom.shell-extension.zip` and publishes the release.
-`make zip` builds the same bundle locally.
+`release` workflow builds `scroll-zoom.shell-extension.zip` and publishes the release. Once
+the extensions.gnome.org account is set, it then uploads the same bundle there for review,
+and GNOME updates everyone who installed from there once it is approved
+([decision 0008](docs/decisions/0008-updates-reach-people-through-extensions-gnome-org.md)).
+`make zip` builds the same bundle locally, and `make check` holds it to the rules of the
+site's review guidelines that a file check can see (`tests/style/test_bundle.py`).
+
+The account is two settings in the repository's settings on GitHub: the variable
+`EGO_USERNAME`, and the secret `EGO_PASSWORD` in the environment `extensions-gnome-org`.
+Each upload makes, in the account's name, the two statements the site's upload page asks
+for (`STATEMENTS` in `tools/ego.py`). Without the variable, a release uploads nothing.
 
 ## After a GNOME upgrade
 
-`metadata.json` lists only the GNOME versions the tests have passed on. On a new version,
-run `make test-shell`; once it passes, add the version to `shell-version`.
+`metadata.json` lists only the GNOME versions the tests have passed on
+([decision 0009](docs/decisions/0009-shell-version-grows-after-the-shell-scenarios-pass.md)).
+To add one, on a branch, add its major to `shell-version` and run `make test-shell` on a
+machine whose `gnome-shell --version` reports it; the test shell refuses a major
+`metadata.json` does not list. Fix what fails, merge once it passes on the stable release,
+and release it. The same change updates each place that names a GNOME major, which
+`tests/style/test_gnome_versions.py` finds, whether a major was added or dropped.
