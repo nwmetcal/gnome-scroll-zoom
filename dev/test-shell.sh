@@ -58,6 +58,19 @@ start() {
     rm -rf "$ROOT" "$RUN"
     mkdir -p "$ROOT"/{config,data/gnome-shell/extensions,cache,state} "$RUN"
     chmod 700 "$RUN"
+    # Text antialiased in gray, as GTK draws it. The machine's fontconfig may ask for subpixel
+    # antialiasing instead, whose colored fringes smoothing does not yet read as text.
+    mkdir -p "$ROOT/config/fontconfig"
+    cat > "$ROOT/config/fontconfig/fonts.conf" <<'EOF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <match target="font">
+    <edit name="rgba" mode="assign"><const>none</const></edit>
+    <edit name="lcdfilter" mode="assign"><const>lcdnone</const></edit>
+  </match>
+</fontconfig>
+EOF
 
     cp -r "$REPO/$UUID" "$ROOT/data/gnome-shell/extensions/"
     glib-compile-schemas "$ROOT/data/gnome-shell/extensions/$UUID/schemas"

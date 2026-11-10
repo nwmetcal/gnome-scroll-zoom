@@ -55,16 +55,21 @@ def captured_sharp(shell: Shell, scene: Scene) -> None:
     capture(shell, scene, "text")
 
 
+SHARES = {"two thirds": 2 / 3, "a third": 1 / 3}
+
+
 @then(
     parsers.parse(
-        "the text has at most two thirds as many in-between pixels as with GNOME's scaling"
+        "the {part} has at most {share} as many in-between pixels as with GNOME's scaling"
     )
 )
-def less_blur(shell: Shell, scene: Scene) -> None:
-    box = scene.on_screen(pattern_box(shell, "text"))
+def less_blur(shell: Shell, scene: Scene, part: str, share: str) -> None:
+    box = scene.on_screen(pattern_box(shell, PATTERN_PARTS[part]))
     sharp = in_between_fraction(crop(scene.image("text"), box))
     standard = in_between_fraction(crop(scene.image("standard"), box))
-    assert sharp <= standard * 2 / 3, f"{sharp:.3f} in between, against GNOME's {standard:.3f}"
+    assert sharp <= standard * SHARES[share], (
+        f"{sharp:.3f} in between, against GNOME's {standard:.3f}"
+    )
 
 
 @then(parsers.parse("the gradient differs between them by less than 1/255 on average"))
@@ -83,20 +88,28 @@ def line_up(shell: Shell, scene: Scene) -> None:
     assert shift == (0, 0), f"shifted by {shift}"
 
 
-@then(parsers.parse("every corner of the two stems is within {most:g} pixel of a right angle"))
-def stems_square(shell: Shell, scene: Scene, most: float) -> None:
+@then(
+    parsers.parse(
+        "every corner of the two stems and the square is within {most:g} pixel of a right angle"
+    )
+)
+def corners_square(shell: Shell, scene: Scene, most: float) -> None:
     whole = pattern(shell)
     stems = whole["stems"]
     assert isinstance(stems, dict)
-    for name in ("fullStem", "splitStem"):
-        stem = Box(
+    shapes = {
+        name: Box(
             number(whole["x"]) + number(whole[name]),
             number(whole["y"]) + number(stems["y"]),
             STEM_WIDTH,
             number(stems["height"]),
         )
-        # With a pixel of paper around it, short of the other stem.
-        around = inset(scene.on_screen(stem), -scene.zoom)
+        for name in ("fullStem", "splitStem")
+    }
+    shapes["square"] = pattern_box(shell, "square")
+    for name, shape in shapes.items():
+        # With a pixel of paper around it, short of the shapes beside it.
+        around = inset(scene.on_screen(shape), -scene.zoom)
         gaps = corner_gaps(ink(crop(scene.image("text"), around)))
         assert max(gaps) <= most, f"{name}: corners {', '.join(f'{g:.1f}' for g in gaps)} pixels in"
 

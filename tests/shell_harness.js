@@ -30,6 +30,7 @@
         fullStem: 12, splitStem: 15.5, stems: {y: 56, height: 40},
         gradient: {x: 30, y: 56, width: 64, height: 40},
         serif: {x: 8, y: 104, width: 104, height: 22},
+        square: {x: 20.3, y: 60.6, width: 6, height: 6},
     };
 
     const extension = () => Main.extensionManager.lookup(UUID);
@@ -213,6 +214,9 @@
                 // across each of two columns, three pixels to its right.
                 cr.rectangle(PATTERN.fullStem, PATTERN.stems.y, 1, PATTERN.stems.height);
                 cr.rectangle(PATTERN.splitStem, PATTERN.stems.y, 1, PATTERN.stems.height);
+                // A square whose sides all fall between pixels, as a letter's mostly do.
+                const {square} = PATTERN;
+                cr.rectangle(square.x, square.y, square.width, square.height);
                 cr.fill();
                 // Serif capitals, with upright strokes the font draws thick, and bars and
                 // serifs it draws thin.
