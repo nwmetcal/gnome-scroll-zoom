@@ -53,8 +53,7 @@ def overview_closed(shell: Shell) -> None:
     assert shell.state()["overview"] is False
 
 
-@then(parsers.parse("GNOME's zoom toggle turns zoom on at {zoom:g}x"))
-def toggle_on(shell: Shell, zoom: float) -> None:
+def toggle(shell: Shell) -> None:
     # GNOME's toggle, Super+Alt+8, sets this setting; the test shell runs no settings daemon.
     shell.call(
         "new imports.gi.Gio.Settings({schema_id: 'org.gnome.desktop.a11y.applications'})"
@@ -62,5 +61,15 @@ def toggle_on(shell: Shell, zoom: float) -> None:
     )
     shell.wait_until("scrollZoomTest.state().on")
     shell.settle()
+
+
+@when("GNOME's zoom toggle turns zoom on")
+def toggle_on_now(shell: Shell) -> None:
+    toggle(shell)
+
+
+@then(parsers.parse("GNOME's zoom toggle turns zoom on at {zoom:g}x"))
+def toggle_on(shell: Shell, zoom: float) -> None:
+    toggle(shell)
     state = shell.state()
     assert abs(number(state["zoom"]) / zoom - 1) < 0.005, state
