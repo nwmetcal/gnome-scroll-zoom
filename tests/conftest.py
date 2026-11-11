@@ -4,6 +4,7 @@
 import re
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from pytest_bdd.scenario import scenario_wrapper_template_registry
@@ -29,6 +30,7 @@ class Row:
 
 
 ROWS = pytest.StashKey[dict[str, Row]]()
+SHELL_LOG = pytest.StashKey[Path]()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -116,17 +118,34 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 
 
 @pytest.fixture(scope="session")
-def test_shell() -> Generator[Shell]:
+def test_shell(request: pytest.FixtureRequest) -> Generator[Shell]:
     """One private test shell for the whole run."""
     if (refusal := gnome_shell_refusal()) is not None:
         pytest.fail(refusal)
     shell = Shell(new_root())
+    request.config.stash[SHELL_LOG] = shell.kept_log
     try:
         shell.start()
         yield shell
     finally:
         # Also when the start times out, so no shell is left running.
         shell.stop()
+
+
+def shell_log_line(log: Path | None, failed: bool) -> str | None:
+    """The line a run that failed prints to say where its test shell's log is kept, since a
+    failing step that does not take the shell names no root."""
+    if log is None or not failed:
+        return None
+    shown = log.relative_to(ROOT) if log.is_relative_to(ROOT) else log
+    return f"the test shell's log, where GNOME Shell writes the extension's errors: {shown}"
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    failed = bool(terminalreporter.stats.get("failed") or terminalreporter.stats.get("error"))
+    line = shell_log_line(terminalreporter.config.stash.get(SHELL_LOG, None), failed)
+    if line is not None:
+        terminalreporter.write_line(line)
 
 
 @pytest.fixture
