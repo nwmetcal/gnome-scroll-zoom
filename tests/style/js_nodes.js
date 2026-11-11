@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// What gjs's own parser reads in each source, for the undo check in test_bundle.py. Reading
-// the syntax tree, not the text, a comment, a string, or a regex can never pass for code,
-// and a name the parser can resolve, such as obj['con' + 'nect'], is read as that name.
+// What gjs's own parser reads in each source, for the bundle's checks in test_bundle.py.
+// Reading the syntax tree, not the text, a comment, a string, or a regex can never pass for
+// code, and a name the parser can resolve, such as obj['con' + 'nect'], is read as that name.
 //
 //   gjs -m tests/style/js_nodes.js SOURCES.json
 //
@@ -22,6 +22,12 @@
 //   held: each place a held name stands, as [line, name, role]: role is hold, assigned,
 //     laters for the receiver of its own .add( or .remove(, or other.
 //   glib: the names GLib goes by in the file.
+//   imports: each module the source imports, re-exports, or loads with import() of a string,
+//     by its specifier, such as gi://Gtk or ./zoomMotion.js, and each path it reaches through
+//     gjs's older importer, such as imports.gi.Gtk, as [line, path], from imports or from the
+//     global object's (globalThis or window), however the path is spelled: a member written
+//     with a string, a name or a parameter that holds part of it, or a pattern that takes
+//     names out of it.
 
 import GLib from 'gi://GLib';
 
@@ -202,6 +208,136 @@ function read(ast) {
     return {calls, names, holds: [...heldNames], held, glib: [...glib]};
 }
 
+function importsOf(ast) {
+    const found = [];
+    const functions = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
+    // Every path each name has been given anywhere in the file, since a read above a name's
+    // last binding, as in a function, may see any of them.
+    const aliases = new Map();
+    const nameOf = (node, computed) => {
+        if (node?.type === 'ComputedName')
+            return nameOf(node.name, false);
+        if (node?.type === 'Identifier' && !computed)
+            return node.name;
+        return node?.type === 'Literal' && typeof node.value === 'string' ? node.value : null;
+    };
+    // The global object stands as global, which globalThis, window, and its own globalThis
+    // and window name, and whose imports is the older importer.
+    const normal = path => {
+        let now = path;
+        for (let before = null; now !== before;) {
+            before = now;
+            now = now.replace(/^global\.(?:globalThis|window)(?=\.|$)/, 'global')
+                .replace(/^global\.imports(?=\.|$)/, 'imports');
+        }
+        return now;
+    };
+    // A path is followed through every name and member that can hold it, since the older
+    // importer loads a module wherever a path to it is read.
+    function importer(node) {
+        if (!node)
+            return [];
+        if (node.type === 'OptionalExpression')
+            return importer(node.expression);
+        if (node.type === 'AssignmentExpression' && node.operator === '=')
+            return importer(node.right);
+        if (node.type === 'Identifier') {
+            if (node.name === 'imports')
+                return ['imports'];
+            if (['globalThis', 'window'].includes(node.name))
+                return ['global'];
+            return [...aliases.get(node.name) ?? []];
+        }
+        if (!isMember(node))
+            return [];
+        const name = nameOf(node.property, node.computed);
+        return name === null ? [] : importer(node.object).map(base => normal(`${base}.${name}`));
+    }
+    const give = (name, path) => {
+        const paths = aliases.get(name) ?? new Set();
+        aliases.set(name, paths.add(path));
+    };
+    const record = (line, path) => {
+        if (path.startsWith('imports'))
+            found.push([line, path]);
+    };
+    // Each level of a pattern is recorded, so a module taken apart, as const {mainloop: {x}} =
+    // imports, is reached as itself and not only as what is taken out of it.
+    function bind(target, base, line, keep) {
+        if (target?.type === 'AssignmentExpression') {
+            bind(target.left, base, line, keep);
+            for (const fallback of importer(target.right))
+                bind(target.left, fallback, line, keep);
+        } else if (target?.type === 'Identifier') {
+            give(target.name, base);
+            if (keep)
+                record(line, base);
+        } else if (target?.type === 'ObjectPattern') {
+            if (keep)
+                record(line, base);
+            for (const property of target.properties) {
+                if (property.type === 'SpreadExpression') {
+                    bind(property.expression, base, line, keep);
+                    continue;
+                }
+                const key = nameOf(property.key, property.computed);
+                if (key !== null)
+                    bind(property.value, normal(`${base}.${key}`), line, keep);
+            }
+        }
+    }
+    function walk(node, keep) {
+        const line = node.loc?.start.line ?? 0;
+        const source = (node.moduleRequest?.source ?? node.source)?.value;
+        if (keep && ['ImportDeclaration', 'ExportDeclaration'].includes(node.type) &&
+            typeof source === 'string')
+            found.push([line, source]);
+        const loads = node.type === 'CallImport' ? node.arguments?.[0] : null;
+        if (keep && loads?.type === 'Literal' && typeof loads.value === 'string')
+            found.push([line, loads.value]);
+        if (node.type === 'VariableDeclarator') {
+            for (const path of importer(node.init))
+                bind(node.id, path, line, keep);
+        }
+        if (node.type === 'AssignmentExpression' && node.operator === '=') {
+            for (const path of importer(node.right))
+                bind(node.left, path, line, keep);
+        }
+        if (functions.has(node.type)) {
+            node.params.forEach((param, index) => {
+                for (const path of importer(node.defaults?.[index]))
+                    bind(param, path, line, keep);
+            });
+        }
+        if (keep && isMember(node)) {
+            for (const path of importer(node))
+                record(line, path);
+        }
+        for (const [, child] of children(node))
+            walk(child, keep);
+    }
+    // Names first, again until none changes, so a chain of names given in any order is known,
+    // then the paths. A name given a path built from itself, as a = a.gi, grows each time, so
+    // the passes stop at one more than the places a name can be given a path.
+    let sites = 0;
+    (function count(node) {
+        sites += ['VariableDeclarator', 'AssignmentExpression'].includes(node.type) ? 1 : 0;
+        sites += functions.has(node.type) ? node.params.length : 0;
+        for (const [, child] of children(node))
+            count(child);
+    })(ast);
+    const state = () => JSON.stringify([...aliases].map(([name, paths]) => [name, [...paths]]));
+    for (let pass = 0, before = null; pass <= sites; pass++) {
+        walk(ast, false);
+        const now = state();
+        if (now === before)
+            break;
+        before = now;
+    }
+    walk(ast, true);
+    return found;
+}
+
 const [, contents] = GLib.file_get_contents(ARGV[0]);
 const sources = JSON.parse(new TextDecoder().decode(contents));
 print(JSON.stringify(sources.map(source => {
@@ -213,5 +349,5 @@ print(JSON.stringify(sources.map(source => {
             throw error;
         return error.message;
     }
-    return read(ast);
+    return {...read(ast), imports: importsOf(ast)};
 })));
