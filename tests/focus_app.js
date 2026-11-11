@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// A full-screen app for SZ-009: a button at the top left, where the zoomed view starts, a
-// button near the middle of the screen, and a line of text below it, both out of that view at
-// 3x. Tab moves keyboard focus from the first button to the second. With --print the line
-// takes focus and the app moves its text cursor on its own every 250 ms, as a terminal does
+// A full-screen app for SZ-009 and SZ-010: a button at the top left, where the zoomed view
+// starts, a button near the middle of the screen, and a line of text below it, both out of that
+// view at 3x. Tab moves keyboard focus from the first button to the second. With --print the
+// line takes focus and the app moves its text cursor on its own every 250 ms, as a terminal does
 // as it prints. With --big the middle button and the line give way to a text area bigger than
 // the view at 3x, as a terminal or an editor is, which Tab moves focus into from the first
-// button.
+// button. With --corner the first button sits in the screen's top-left corner instead, as a
+// window's header bar buttons do, so following it takes the view past the screen's edges when
+// GNOME lets the view go past them.
 //
 // Run inside the test shell:  dev/test-shell.sh client gjs -m tests/focus_app.js
 import Gdk from 'gi://Gdk?version=4.0';
@@ -15,6 +17,7 @@ import Gtk from 'gi://Gtk?version=4.0';
 export const TITLE = 'Focus test app';
 // Where things are on the screen, in pixels; the window fills it from the top-left corner.
 export const NEAR = {x: 40, y: 40, width: 120, height: 40};
+export const CORNER = {x: 4, y: 4, width: 120, height: 40};
 export const MIDDLE = {x: 700, y: 380, width: 120, height: 40};
 export const LINE = {x: 740, y: 560, width: 40, height: 24};
 export const AREA = {x: 100, y: 150, width: 1100, height: 600};
@@ -22,6 +25,7 @@ const PRINT_MS = 250;
 
 const printing = ARGV.includes('--print');
 const big = ARGV.includes('--big');
+const corner = ARGV.includes('--corner');
 const app = new Gtk.Application({application_id: 'dev.scrollzoom.Focus'});
 
 app.connect('activate', () => {
@@ -38,7 +42,7 @@ app.connect('activate', () => {
     const near = new Gtk.Button({label: 'Near'});
     const middle = new Gtk.Button({label: 'Middle'});
     const line = new Gtk.TextView({monospace: true, top_margin: 0, left_margin: 0});
-    place(near, NEAR);
+    place(near, corner ? CORNER : NEAR);
     if (big) {
         const area = new Gtk.TextView({monospace: true});
         area.get_buffer().set_text(Array.from({length: 40},
