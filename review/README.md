@@ -46,6 +46,12 @@ naming, structure, a style no formatter owns, a risk that needs a later change t
 note never holds a change back and never starts a round: the author fixes it in a push that
 answers a blocking finding when it is cheap and in scope, and otherwise opens an issue for it.
 
+A frame-rate mark, such as SZ-003's view moving at least 120 times a second, can fail when many
+test shells share a loaded machine, on main's code as on the head's. So a reviewer whose run
+fails one reruns that scenario alone, once `pgrep -f 'gnome-shell --headless'` shows no other
+test shell, at the head and on main's code, and reports it as blocking only when the head
+fails alone and main passes alone.
+
 ## The form
 
 ```text
@@ -75,4 +81,5 @@ checked, so the next reader knows what the review covers.
 - `Done when:` judges every line of the brief, by its number, in order.
 - `Findings:` numbers each finding `blocking:` or `note:`. A blocking one has an `Evidence:`
   line, indented three spaces: the command, what it printed, and what the intent or rule
-  requires. With nothing found, the line reads `Findings: none`.
+  requires. A blocking finding on a frame-rate mark gives both runs alone: the head's, which
+  failed, and main's, which passed. With nothing found, the line reads `Findings: none`.
