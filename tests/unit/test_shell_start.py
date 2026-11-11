@@ -103,12 +103,15 @@ def test_a_shell_that_never_comes_up_says_why_at_the_script_s_wait(
 ) -> None:
     monkeypatch.setenv("TEST_SHELL_START_S", "1")
     shell = Shell(new_root())
+    began = time.monotonic()
     try:
         with pytest.raises(ShellError, match="did not come up(?s:.*)FAKE-CAUSE"):
             shell.start()
+        took_s = time.monotonic() - began
     finally:
         log = shell.stop()
     assert CAUSE in log.read_text()
+    assert took_s >= 1, f"the script waited {took_s:.2f} s, not the 1 s it was given"
 
 
 @pytest.mark.usefixtures("silent_gnome_shell")
