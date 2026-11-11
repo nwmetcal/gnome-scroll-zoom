@@ -3,6 +3,7 @@
 
 import os
 import shutil
+import signal
 import time
 from pathlib import Path
 
@@ -55,6 +56,33 @@ GLib.usleep(120 * 1000000);
 """
 
 
+# The same, then stopped outright by its own hand, as a shell that hangs at start can be: then
+# even the bus's own questions to it, which GDBus answers off the main loop, go unanswered.
+STOPPED = FROZEN.replace(
+    "GLib.usleep(120 * 1000000);",
+    "const pid = new Gio.Credentials().get_unix_pid();\n"
+    "GLib.file_set_contents(System.programArgs[0], `${pid}`);\n"
+    "GLib.spawn_command_line_async(`kill -STOP ${pid}`);\n"
+    "GLib.usleep(120 * 1000000);",
+).replace(
+    "import GLib from 'gi://GLib';\n",
+    "import GLib from 'gi://GLib';\nimport System from 'system';\n",
+)
+
+
+@pytest.fixture
+def stopped_gnome_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A stand-in gnome-shell that holds GNOME Shell's name on the bus, then stops, and the
+    file it writes its pid to: a stopped process waits out a plain kill, so the test kills it."""
+    if shutil.which("gjs") is None:
+        pytest.skip("the stopped stand-in runs in gjs")
+    script, pid = tmp_path / "stopped.js", tmp_path / "stopped.pid"
+    script.write_text(STOPPED)
+    # Local files only, so no gvfs mount outlives the stand-in in the runtime folder.
+    stand_in_gnome_shell(tmp_path, monkeypatch, f"GIO_USE_VFS=local exec gjs -m {script} {pid}")
+    return pid
+
+
 @pytest.fixture
 def frozen_gnome_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A stand-in gnome-shell that holds GNOME Shell's name on the bus and never answers."""
@@ -62,7 +90,7 @@ def frozen_gnome_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         pytest.skip("the frozen stand-in runs in gjs")
     script = tmp_path / "frozen.js"
     script.write_text(FROZEN)
-    stand_in_gnome_shell(tmp_path, monkeypatch, f"exec gjs -m {script}")
+    stand_in_gnome_shell(tmp_path, monkeypatch, f"GIO_USE_VFS=local exec gjs -m {script}")
 
 
 @pytest.mark.usefixtures("failing_gnome_shell")
@@ -144,3 +172,22 @@ def test_a_shell_that_holds_its_name_and_never_answers_is_given_up_on_in_time(
         shell.stop()
     took_s = time.monotonic() - began
     assert took_s < SOON_S, f"a shell that never answered took {took_s:.1f} s to be given up on"
+
+
+def test_a_shell_that_holds_its_name_and_stopped_is_given_up_on_in_time(
+    monkeypatch: pytest.MonkeyPatch, stopped_gnome_shell: Path
+) -> None:
+    monkeypatch.setenv("TEST_SHELL_START_S", "1")
+    monkeypatch.setattr("tests.shell.START_TIMEOUT_S", 20)
+    shell = Shell(new_root())
+    began = time.monotonic()
+    try:
+        with pytest.raises(ShellError, match="did not come up(?s:.*)FAKE-CAUSE"):
+            shell.start()
+        took_s = time.monotonic() - began
+    finally:
+        if stopped_gnome_shell.exists():
+            os.kill(int(stopped_gnome_shell.read_text()), signal.SIGKILL)
+        shell.stop()
+    # A second's wait and one try of at most a second, where an unbounded try took four.
+    assert took_s < 3.5, f"a stopped shell took {took_s:.1f} s to be given up on"
