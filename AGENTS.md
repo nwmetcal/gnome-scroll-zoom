@@ -38,7 +38,7 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
   and the rest of the tests, in `tests/unit/` and `tests/style/`; `tests/shell.py` and
   `tests/shell_harness.js` drive the test shell, `tests/full_screen_app.js` is the
   full-screen app SZ-008 zooms over, and `tests/focus_app.js` the app whose focus and text
-  cursor SZ-009 follows.
+  cursor SZ-009 follows, and SZ-010 zooms over after following.
 - `dev/` holds the private test shell, the test window, and the capture tools for comparing
   smoothing by eye.
 - `tools/` holds the repository's own tools: the commit rules, the intent check, the review
