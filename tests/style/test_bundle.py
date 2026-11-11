@@ -500,6 +500,24 @@ def test_what_disable_assigns_declares_or_quotes_is_not_reached() -> None:
         f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
         "disable() { log('enable'); } }",
         f"class E {{ {CONNECTS} disable() {{ const stop = () => {{ {UNDO} }}; }} }}",
+        f"class E {{ {CONNECTS} disable() {{ [1].forEach(_onLock => 0); }} _onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ [this._a, this._onLock] = [null, null]; }} "
+        f"_onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ ({{onLock: this._onLock}} = {{}}); }} "
+        f"_onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ delete this._onLock; }} _onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ this._onLock++; }} _onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ const o = {{ stop: () => {{ {UNDO} }} }}; }} }}",
+        f"class E {{ {CONNECTS} disable() {{ const o = {{ stop() {{ {UNDO} }} }}; }} }}",
+        f"class E {{ {CONNECTS} disable() {{ try {{ f(); }} catch (_onLock) {{}} }} "
+        f"_onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ class _onLock {{}} }} _onLock() {{ {UNDO} }} }}",
+        f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
+        "disable() { this._settings.set({enable: false}); } }",
+        f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
+        "disable() { const [enable] = this._pairs; } }",
+        f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
+        "disable() { const {enable: e} = this._pairs; } }",
     ]
     for source in missed:
         [found] = reached_and_undone([source])
@@ -519,6 +537,8 @@ def test_an_undo_disable_reaches_by_call_callback_or_name_counts() -> None:
         f"class E {{ {CONNECTS} disable() {{ this._stop(); }} _stop = () => {{ {UNDO} }}; }}",
         f"class E {{ {CONNECTS} disable() {{ this['_stop'](); }} _stop() {{ {UNDO} }} }}",
         f"class E {{ {CONNECTS} disable() {{ const stop = () => {{ {UNDO} }}; stop(); }} }}",
+        f"class E {{ {CONNECTS} disable() {{ this?.['_stop'](); }} _stop() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ const o = {{ stop() {{ {UNDO} }} }}; o.stop(); }} }}",
     ]
     for source in reached_ones:
         assert reached_and_undone([source]) == [[]], source
