@@ -18,6 +18,12 @@ GNOME_FOLLOWING = {
     "moves the view with its contents": "proportional",
     "follows nothing": "none",
 }
+# GNOME's Follow Behavior as its Settings page names it, and the setting each one is.
+FOLLOW_BEHAVIOR = {
+    "Remains Centered": "centered",
+    "Moves with Contents": "proportional",
+    "Pushes Contents Around": "push",
+}
 # GNOME's zoomed view on half the screen, as its Screen Area setting names it, and where it
 # lies: x, y, width, height.
 VIEW_PORTS = {
@@ -317,6 +323,17 @@ def focus_and_follow(shell: Shell, drawn: Drawn, keys: list[list[Json]]) -> None
     assert 0 <= x <= SCREEN[0] and 0 <= y <= SCREEN[1], (
         f"after following focus the pointer is drawn at {x:.0f}, {y:.0f}, off the screen"
     )
+
+
+@when(parsers.parse("GNOME's Follow Behavior is set to {label}"))
+def follow_behavior_set(shell: Shell, drawn: Drawn, label: str) -> None:
+    shell.call(
+        f"{MAGNIFIER}.set_string('mouse-tracking', '{FOLLOW_BEHAVIOR[label]}'); return true;"
+    )
+    # A zoom under GNOME's other following moved the view under the pointer, which is drawn
+    # where that left it as push takes over again.
+    drawn.before = drawn_now(shell, drawn.view_port)
+    drawn.past_low, drawn.past = past_now(shell)
 
 
 @when(parsers.parse("the pointer moves {pixels:d} pixels left"))
