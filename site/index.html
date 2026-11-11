@@ -112,19 +112,16 @@
   table { border-collapse: collapse; width: 100%; margin: 0.75rem 0; }
   th, td { text-align: left; vertical-align: top; padding: 0.55rem 0.6rem; border-bottom: 0.06rem solid var(--line); }
   th { font-weight: 700; }
-  /* A combination of keys keeps to one line, as a key does, wherever the keys table has room
-     for it whole. Where the table is narrower, as at 400% zoom or with larger text, a copy
-     that may break after a plus takes its place: a box of its own, so it moves to a new line
-     whole where it fits and breaks only where it is wider than its line, and the table fits
-     instead of scrolling sideways. Two copies, shown by turns, because Firefox keeps a break
-     it once took after the chance to break goes away, as when the page is zoomed back out.
-     20em, 400 px at the page's text size, leaves room for fonts wider than Noto Sans, whose
-     table needs 312.5 px. The table's margins are its holder's, so they meet the heading's as
-     they did. */
-  .keys-table { container-type: inline-size; margin: 0.75rem 0; }
-  .keys-table table { margin: 0; }
+  /* A combination of keys keeps to one line, as a key does, wherever the keys table fits with
+     it whole. Where the page is narrower, as at 400% zoom, a copy with a zero-width space after
+     each plus takes its place, so it breaks there and the table fits instead of scrolling
+     sideways. Two copies, shown by turns, because Firefox keeps a break it took once a break
+     chance goes away, as when the page is zoomed back out. 14.63em is the table's least width
+     with each combination whole, 312.5 px in Noto Sans, less the 20 px of right margin it may
+     run into. */
+  main { container-type: inline-size; }
   .wraps { display: none; }
-  @container (max-width: 20em) { .whole { display: none; } .wraps { display: inline-block; } }
+  @container (max-width: 14.63em) { .whole { display: none; } .wraps { display: inline; } }
   kbd {
     font-family: inherit; font-weight: 700; padding: 0 0.3rem; border: 0.06rem solid var(--line);
     border-radius: 0.3rem; background: var(--panel); white-space: nowrap;
@@ -263,19 +260,17 @@
 
   <section aria-labelledby="use">
     <h2 id="use">How to use it</h2>
-    <div class="keys-table">
     <table>
       <caption class="visually-hidden">Keys and what they do</caption>
       <thead><tr><th scope="col">Do this</th><th scope="col">To</th></tr></thead>
       <tbody>
         <tr><td>Hold <kbd>Super</kbd> and scroll up or down</td><td>Zoom in or out around the pointer</td></tr>
         <tr><td>Zoom all the way out</td><td>Turn zoom off</td></tr>
-        <tr><td><span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>8</kbd></span><span class="wraps"><kbd>Super</kbd>+<wbr><kbd>Alt</kbd>+<wbr><kbd>8</kbd></span></td><td>Turn zoom on or off, at the last level you used</td></tr>
-        <tr><td><span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>=</kbd></span><span class="wraps"><kbd>Super</kbd>+<wbr><kbd>Alt</kbd>+<wbr><kbd>=</kbd></span> and <span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>-</kbd></span><span class="wraps"><kbd>Super</kbd>+<wbr><kbd>Alt</kbd>+<wbr><kbd>-</kbd></span></td><td>Zoom in and out with the keyboard</td></tr>
-        <tr><td><span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>\</kbd></span><span class="wraps"><kbd>Super</kbd>+<wbr><kbd>Alt</kbd>+<wbr><kbd>\</kbd></span></td><td>Switch smoothing off (hard pixels) and back on</td></tr>
+        <tr><td><span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>8</kbd></span><span class="wraps"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>8</kbd></span></td><td>Turn zoom on or off, at the last level you used</td></tr>
+        <tr><td><span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>=</kbd></span><span class="wraps"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>=</kbd></span> and <span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>-</kbd></span><span class="wraps"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>-</kbd></span></td><td>Zoom in and out with the keyboard</td></tr>
+        <tr><td><span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>\</kbd></span><span class="wraps"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>\</kbd></span></td><td>Switch smoothing off (hard pixels) and back on</td></tr>
       </tbody>
     </table>
-    </div>
     <p>These are the same keys a Mac uses, with Super in place of Cmd and Alt in place of Option.
     To change the settings, open the <strong>Extensions</strong> app and choose Scroll Zoom's
     settings: the keys to hold, how fast it zooms, the maximum zoom, and how text is smoothed.</p>
