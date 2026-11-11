@@ -71,10 +71,11 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
 
 ## Requirements
 
-- A requirement is a Gherkin feature under `requirements/`, named and titled by its `SZ-###`
-  id, tagged one of `@invariant` (holds on every change) and `@golden` (compares what is drawn
-  with a known answer), and `@shell` when a scenario needs GNOME Shell. Its steps are in
-  `tests/requirements/test_sz_###.py`. Ids from `SZ-900` to `SZ-999` are kept for examples.
+- A requirement is a Gherkin feature under `requirements/`, titled by its `SZ-###` id and
+  named for its title, `SZ-###-its-title.feature`, tagged one of `@invariant` (holds on every
+  change) and `@golden` (compares what is drawn with a known answer), and `@shell` when a
+  scenario needs GNOME Shell. Its steps are in `tests/requirements/test_sz_###.py`. Ids from
+  `SZ-900` to `SZ-999` are kept for examples.
 - Steps observe what a person would: GNOME's zoom state, the frames drawn, screenshots. Input
   goes in through virtual devices, the same path a real keyboard, mouse, and touchpad take. A
   step never asserts on the extension's internals.
@@ -134,7 +135,7 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 
 | Rule | Enforced by |
 | --- | --- |
-| A feature is named and titled by its id, carries one kind tag, and has a steps module named for its id | collection in `tests/conftest.py`; `tests/style/test_traceability.py` |
+| A feature is titled by its id and named for its title's words, lowercased and joined by hyphens, carries one kind tag, and has a steps module named for its id | collection in `tests/conftest.py`; `tests/style/test_traceability.py` |
 | No two features share an id | `tests/style/test_traceability.py` |
 | A scenario that needs GNOME Shell is tagged `@shell`, and is pending without the test shell | collection in `tests/conftest.py`; a step that needs the shell fails outside it |
 | The glide runs without GNOME Shell | `tests/requirements/test_sz_002.py`, which loads `zoomMotion.js` in plain gjs |
