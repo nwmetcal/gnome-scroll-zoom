@@ -34,7 +34,9 @@ make install      # install your working copy; log out and back in to load it
 your desktop. It types and scrolls through virtual input devices and checks what GNOME
 draws. It runs Wayland apps and, through Xwayland, X11 apps, as most games are.
 Test shells with different roots (`TEST_SHELL_ROOT`), such as each `make test-shell` run's,
-run side by side.
+run side by side. Each run keeps its test shell's log, where GNOME Shell writes the extension's
+errors, and the scenarios' screenshots in `build/shots/`, in a folder named for its root, and a
+run that fails ends by naming the log.
 
 ## Looking at the smoothing by eye
 

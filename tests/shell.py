@@ -68,6 +68,9 @@ class Shell:
     """One running test shell, its root folder, and the results it writes."""
 
     root: Path
+    # Where its screenshots and its log are kept, in a folder named for its root: build/shots/
+    # for a run, so they outlive it, and a test's own folder for a stand-in shell.
+    shots: Path = BUILD / "shots"
     _results: Path = field(init=False)
 
     def __post_init__(self) -> None:
@@ -106,7 +109,7 @@ class Shell:
         log, where GNOME Shell writes the extension's errors, beside its screenshots. Returns
         where the log is kept."""
         subprocess.run([str(TEST_SHELL), "stop"], env=self._env(), check=True, timeout=30)
-        kept = self._captures() / "shell.log"
+        kept = self.kept_log
         kept.parent.mkdir(parents=True, exist_ok=True)
         log = self.root / "shell.log"
         kept.write_text(log.read_text() if log.exists() else "the shell wrote no log\n")
@@ -114,8 +117,13 @@ class Shell:
         return kept
 
     def _captures(self) -> Path:
-        """This shell's own folder under build/shots/, for its screenshots and its log."""
-        return BUILD / "shots" / self.root.name
+        """This shell's own folder under its shots folder, for its screenshots and its log."""
+        return self.shots / self.root.name
+
+    @property
+    def kept_log(self) -> Path:
+        """Where stop() keeps the shell's log."""
+        return self._captures() / "shell.log"
 
     def _log_tail(self, lines: int = 40) -> str:
         log = self.root / "shell.log"
@@ -185,7 +193,7 @@ class Shell:
         return value
 
     def screenshot(self, name: str) -> Path:
-        """A screenshot of the whole test screen, kept under build/shots/, in a folder of
+        """A screenshot of the whole test screen, kept in its shots folder, in a folder of
         this shell's own, so runs side by side never judge each other's captures."""
         out = self._captures() / f"{name}.png"
         out.parent.mkdir(parents=True, exist_ok=True)

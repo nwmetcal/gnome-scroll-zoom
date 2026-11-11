@@ -3,10 +3,14 @@
 
 import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from tests.conftest import shell_log_line
+from tests.paths import BUILD, ROOT
 from tests.shell import Shell, ShellError, new_root
 
 CAUSE = "FAKE-CAUSE: no render node for the test shell"
@@ -25,8 +29,8 @@ def failing_gnome_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 
 @pytest.mark.usefixtures("failing_gnome_shell")
-def test_a_shell_that_fails_to_start_says_why() -> None:
-    shell = Shell(new_root())
+def test_a_shell_that_fails_to_start_says_why(tmp_path: Path) -> None:
+    shell = Shell(new_root(), shots=tmp_path / "shots")
     try:
         with pytest.raises(ShellError, match="FAKE-CAUSE"):
             shell.start()
@@ -35,10 +39,40 @@ def test_a_shell_that_fails_to_start_says_why() -> None:
 
 
 @pytest.mark.usefixtures("failing_gnome_shell")
-def test_a_stopped_shell_keeps_its_log() -> None:
-    shell = Shell(new_root())
+def test_a_stopped_shell_keeps_its_log(tmp_path: Path) -> None:
+    shell = Shell(new_root(), shots=tmp_path / "shots")
     with pytest.raises(ShellError):
         shell.start()
     log = shell.stop()
     assert CAUSE in log.read_text(), f"{log} lost the cause"
     assert not shell.root.exists()
+    assert log == shell.kept_log and log.is_relative_to(tmp_path), log
+    assert not (BUILD / "shots" / shell.root.name).exists(), "a stand-in's log went to build/"
+
+
+def test_a_failed_run_says_where_the_shell_log_is() -> None:
+    log = BUILD / "shots" / "scroll-zoom-shell-x" / "shell.log"
+    line = shell_log_line(log, failed=True)
+    assert line is not None and line.endswith("build/shots/scroll-zoom-shell-x/shell.log"), line
+    assert shell_log_line(log, failed=False) is None
+    assert shell_log_line(None, failed=True) is None
+
+
+def test_a_failed_run_ends_by_naming_the_shell_log(tmp_path: Path) -> None:
+    log = tmp_path / "shots" / "scroll-zoom-shell-x" / "shell.log"
+    (tmp_path / "conftest.py").write_text(
+        "from pathlib import Path\n"
+        "from tests.conftest import *\n"
+        f"def pytest_configure(config):\n    config.stash[SHELL_LOG] = Path({str(log)!r})\n"
+    )
+    (tmp_path / "test_x.py").write_text("def test_x():\n    assert False\n")
+    run = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-rA", str(tmp_path)],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True,
+        text=True,
+    )
+    lines = [line for line in run.stdout.splitlines() if line.strip()]
+    assert run.returncode == 1, run.stdout
+    assert lines[-1].endswith(str(log)), lines[-3:]
