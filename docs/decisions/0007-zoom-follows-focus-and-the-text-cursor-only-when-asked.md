@@ -78,7 +78,8 @@ while the pointer moves lands once a switch is off, Scroll Zoom has come on or g
 window has closed or another app has focus, or the view or the focus no longer needs it; if a
 switch that is on does nothing when Scroll Zoom comes on with GNOME's settings saying to follow
 nothing; if Scroll Zoom coming on leaves the following GNOME's settings asked for before it; if
-GNOME's settings are written; or if turning Scroll Zoom off does not hand GNOME's following back.
+GNOME's settings are written; or if turning Scroll Zoom off does not hand GNOME's following
+back.
 
 ## Reversing it
 
