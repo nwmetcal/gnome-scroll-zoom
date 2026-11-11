@@ -8,7 +8,8 @@ permissions:
   contents: read
 
 jobs:
-  # The description's Intent section declares every requirement the branch touches.
+  # The description's Intent section declares every requirement the branch touches, and each
+  # tag its release commands make is the one the release workflow takes.
   intent:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
