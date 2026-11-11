@@ -283,6 +283,15 @@ def test_the_library_check_reads_each_way_to_import() -> None:
     lazy = "class A {\n    enable() {\n        const {Gtk} = imports.gi;\n    }\n}"
     assert libraries(lazy) == {"Gtk"}
     for spelled in (
+        "const Gtk = globalThis.imports.gi.Gtk;",
+        "const {Gtk = null} = imports.gi;",
+        "const {Gtk: G = null} = imports.gi;",
+        "const {['Gtk']: G} = imports.gi;",
+        "const gi = imports?.gi;\nconst Gtk = gi.Gtk;",
+        "let a, b, c;\nfunction use() { c.Gtk.init(); }\nfunction setC() { c = b.gi; }\n"
+        "function setB() { b = a; }\nfunction setA() { a = imports; }",
+        "function f() { return c.Gtk.init(); }\nfunction g() { c = b; }\n"
+        "function h() { b = a.gi; }\nlet a = imports, b, c;",
         "const gi = imports.gi;\nconst Gtk = gi.Gtk;",
         "const Gtk = imports.gi['Gtk'];",
         "const Gtk = imports['gi'].Gtk;",
@@ -296,6 +305,8 @@ def test_the_library_check_reads_each_way_to_import() -> None:
         assert libraries(spelled) == {"Gtk"}, spelled
     unread = "// imports.gi.Gtk\nconst s = 'gi://Gtk';\nconst t = `imports.gi.Gtk`;"
     assert libraries(unread) == set()
+    assert libraries("const St = (await import('gi://St')).default;") == {"St"}
+    assert libraries("let a = imports;\na = a.gi;\na.Gtk;") <= {"Gtk", "gi"}
 
 
 def test_the_deprecated_check_reads_each_way_to_reach_a_module() -> None:
@@ -305,6 +316,11 @@ def test_the_deprecated_check_reads_each_way_to_reach_a_module() -> None:
         "const {lang} = imports;",
         "const i = imports;\ni.byteArray.toString(b);",
         "this._actor.run_dispose();",
+        "const {mainloop: {timeout_add}} = imports;",
+        "const {lang: {Class}} = imports;",
+        "const {byteArray: {toString}} = imports;",
+        "const Mainloop = globalThis.imports.mainloop;",
+        "const C = imports.lang.Class;",
     ):
         assert deprecated(spelled), spelled
     for clean in ("const GLib = imports.gi.GLib;", "// imports.lang", "const s = 'imports.lang';"):
@@ -331,6 +347,12 @@ def test_loaded_follows_every_way_to_import_a_module() -> None:
         "f.js",
         "g.js",
     ]
+    nested = {
+        "extension.js": "import './lib/a.js';",
+        "lib/a.js": "import './b.js';",
+        "lib/b.js": "",
+    }
+    assert loaded("extension.js", nested.__getitem__) == ["extension.js", "lib/a.js", "lib/b.js"]
 
 
 @dataclass(frozen=True)
