@@ -11,8 +11,8 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
   the traceability matrix to `build/traceability.md`. Nothing merges without it green.
 - `make test-shell` runs `make check`'s tests and the `@shell` scenarios too, in a private
   headless GNOME Shell that `dev/test-shell.sh` starts (decision 0005). It needs a GNOME Shell
-  whose major `metadata.json` lists, today GNOME Shell 50, and a GPU render node. Run it before pushing
-  any change to the extension, and say in the pull request that it passed, and on which.
+  whose major `metadata.json` lists, today GNOME Shell 50, and a GPU render node. Run it before
+  pushing any change to the extension, and say in the pull request that it passed, and on which.
 - `make format` rewrites the Python, which ruff owns.
 - `make check-commits` checks the commit messages from `origin/main` to the branch's head.
 - `make check-intent BODY=<file>` checks a description's Intent section against the branch.
