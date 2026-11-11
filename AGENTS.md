@@ -140,6 +140,7 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | The glide runs without GNOME Shell | `tests/requirements/test_sz_002.py`, which loads `zoomMotion.js` in plain gjs |
 | A description states its intent and declares every requirement the branch touches | `make check-intent`; the `intent` workflow |
 | A review is well formed, and a blocking finding carries its evidence | `make check-review` |
+| A frame-rate failure is rerun alone, at the head and on main, before a review reports it as blocking | the reviewer's instructions, `.claude/agents/reviewer.md`, and the review form in `review/README.md` |
 | Commit messages follow the rules | the commit-msg hook; `make check-commits` in CI |
 | Nothing reaches `main` but a merged pull request; no force push; no bypassed hook | the pre-push hook; the agent settings in `.claude/settings.json` |
 | Every `make` target this file names exists, and the code map names every folder | `tests/style/test_agents_md.py` |
