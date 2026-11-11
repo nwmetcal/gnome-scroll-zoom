@@ -13,10 +13,12 @@
 //     what the call's result is assigned to, if anything. use says how a
 //     global.compositor.get_laters() call is used: hold, add, remove, or null.
 //   names: every place a name stands, as [line, name, site, within]: site is the index of the
-//     call it names, a string's name included, as obj['name'](), declared for the name a
-//     const, let, or var declares, key for a class method's own name, assigned for a name or
-//     a member an assignment sets, string for any other string that holds a name alone, or
-//     other. A dynamic import stands as the name import().
+//     call it names, a string's name included, as obj['name'](); declared for a name a
+//     declaration, a parameter, a catch, or a class's or function's own name binds, through
+//     any pattern; assigned for a name or a member an assignment, delete, ++, or -- sets,
+//     through any pattern; key for an object literal's or a class member's own key, or a
+//     label; string for any other string that holds a name alone; or other. A dynamic
+//     import stands as the name import().
 //   within, for a call or a name: the name of the function it stands in, by which a call can
 //     reach it: a class's method or field, a declared function, or a function kept in a name,
 //     a member, or an object's key. An unnamed function, such as a callback, is part of the
@@ -115,6 +117,28 @@ function functionName(node, parent, key) {
     return null;
 }
 
+// The binding a child stands in, so a name a pattern, a parameter, or delete reaches is read
+// as bound there, not as named: declared, assigned, or null.
+function bindingOf(node, childKey, binding) {
+    if (node.type === 'VariableDeclarator' && childKey === 'id')
+        return 'declared';
+    if (FUNCTIONS.has(node.type) && ['params', 'rest', 'id'].includes(childKey))
+        return 'declared';
+    if (['CatchClause', 'ClassStatement', 'ClassExpression'].includes(node.type) &&
+        ['param', 'id'].includes(childKey))
+        return 'declared';
+    if (node.type === 'AssignmentExpression' && childKey === 'left')
+        return binding ?? 'assigned';
+    if ((node.type === 'UpdateExpression' ||
+        (node.type === 'UnaryExpression' && node.operator === 'delete')) && childKey === 'argument')
+        return 'assigned';
+    if (binding !== null && ['ObjectPattern', 'ArrayPattern', 'SpreadExpression'].includes(node.type))
+        return binding;
+    if (binding !== null && node.type === 'Property' && childKey === 'value')
+        return binding;
+    return null;
+}
+
 function isMember(node) {
     return node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression';
 }
@@ -196,7 +220,11 @@ function read(ast) {
         return addsOrRemoves(parent, key) ? 'laters' : 'other';
     }
 
-    (function walk(node, parent, key, outer) {
+    (function walk(node, parent, key, outer, binding) {
+        // A pattern's key reads that member of the value, as obj.name does; only an object's
+        // own key is a key alone.
+        if (node.type === 'Property' && binding !== null)
+            node.inPattern = true;
         const within = FUNCTIONS.has(node.type) ? functionName(node, parent, key) ?? outer
             : outer;
         if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') {
@@ -212,19 +240,15 @@ function read(ast) {
         if (node.type === 'CallImport')
             names.push([line, 'import()', 'other', within]);
         const site = node.called === true ? node.call : 'other';
-        const assigned = parent?.type === 'AssignmentExpression' && key === 'left';
-        if (node.type === 'Identifier') {
-            let where = site;
-            if (parent?.type === 'VariableDeclarator' && key === 'id')
-                where = 'declared';
-            else if (parent?.type === 'ClassMethod' && key === 'name')
-                where = 'key';
-            else if (assigned)
-                where = 'assigned';
-            names.push([line, node.name, where, within]);
-        }
+        const keyed = (['ClassMethod', 'ClassField'].includes(parent?.type) && key === 'name') ||
+            (parent?.type === 'Property' && key === 'key' && !parent.computed &&
+                !parent.inPattern) ||
+            (['LabeledStatement', 'BreakStatement', 'ContinueStatement'].includes(parent?.type) &&
+                key === 'label');
+        if (node.type === 'Identifier')
+            names.push([line, node.name, keyed ? 'key' : binding ?? site, within]);
         if (isMember(node) && !node.computed)
-            names.push([line, node.property.name, assigned ? 'assigned' : site, within]);
+            names.push([line, node.property.name, binding ?? site, within]);
         // A string that holds a name alone, as obj['name'], a key, or Reflect.get(obj, 'name').
         if (node.type === 'Literal' && typeof node.value === 'string' &&
             /^[A-Za-z_$][\w$]*$/.test(node.value)) {
@@ -236,9 +260,9 @@ function read(ast) {
             // A member's property name is read above, with the member; every key is walked,
             // a computed one as code.
             if (!(isMember(node) && !node.computed && childKey === 'property'))
-                walk(child, node, childKey, within);
+                walk(child, node, childKey, within, bindingOf(node, childKey, binding));
         }
-    })(ast, null, null, null);
+    })(ast, null, null, null, null);
 
     return {calls, names, holds: [...heldNames], held, glib: [...glib]};
 }

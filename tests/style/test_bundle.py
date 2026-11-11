@@ -500,7 +500,8 @@ def test_what_disable_assigns_declares_or_quotes_is_not_reached() -> None:
         f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
         "disable() { log('enable'); } }",
         f"class E {{ {CONNECTS} disable() {{ const stop = () => {{ {UNDO} }}; }} }}",
-        f"class E {{ {CONNECTS} disable() {{ [1].forEach(_onLock => 0); }} _onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ [1].forEach(_onLock => 0); }} "
+        f"_onLock() {{ {UNDO} }} }}",
         f"class E {{ {CONNECTS} disable() {{ [this._a, this._onLock] = [null, null]; }} "
         f"_onLock() {{ {UNDO} }} }}",
         f"class E {{ {CONNECTS} disable() {{ ({{onLock: this._onLock}} = {{}}); }} "
@@ -516,8 +517,6 @@ def test_what_disable_assigns_declares_or_quotes_is_not_reached() -> None:
         "disable() { this._settings.set({enable: false}); } }",
         f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
         "disable() { const [enable] = this._pairs; } }",
-        f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
-        "disable() { const {enable: e} = this._pairs; } }",
     ]
     for source in missed:
         [found] = reached_and_undone([source])
