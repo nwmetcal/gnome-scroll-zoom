@@ -275,6 +275,7 @@ class Call:
     kept: str | None
     args: tuple[str | None, ...]
     use: str | None
+    within: str | None
 
 
 @dataclass(frozen=True)
@@ -283,7 +284,7 @@ class Read:
     names that hold global.compositor.get_laters()."""
 
     calls: tuple[Call, ...]
-    names: tuple[tuple[int, str, int | str], ...]
+    names: tuple[tuple[int, str, int | str, str | None], ...]
     holds: frozenset[str]
     held: tuple[tuple[int, str, str], ...]
     glib: frozenset[str]
@@ -302,11 +303,13 @@ def _read(found: Json) -> Read | str:
             cast("str | None", c[4]),
             tuple(cast("list[str | None]", c[5])),
             cast("str | None", c[6]),
+            cast("str | None", c[7]),
         )
         for c in facts["calls"]
     )
     names = tuple(
-        (cast(int, n[0]), cast(str, n[1]), cast("int | str", n[2])) for n in facts["names"]
+        (cast(int, n[0]), cast(str, n[1]), cast("int | str", n[2]), cast("str | None", n[3]))
+        for n in facts["names"]
     )
     held = tuple((cast(int, h[0]), cast(str, h[1]), cast(str, h[2])) for h in facts["held"])
     holds = frozenset(cast("list[str]", facts["holds"]))
@@ -346,17 +349,43 @@ def family(name: str, string: bool = False) -> str | None:
     return None
 
 
-def undone(text: str, read: Read) -> list[str]:
+def reached(reads: list[Read]) -> frozenset[str]:
+    """The functions disable() reaches, by name, across the files read: each one a function it
+    reaches calls, or names as a value, as a callback is named; a name it sets, declares, or
+    holds in a string reaches nothing, since none of those runs it. A name reaches every
+    function of that name, in any class, since which object a call lands on is not read."""
+    found = {"disable"}
+    pending = ["disable"]
+    while pending:
+        within = pending.pop()
+        for read in reads:
+            called = {c.name for c in read.calls if c.within == within and c.name}
+            named = {
+                name
+                for _, name, site, w in read.names
+                if w == within and site not in ("key", "declared", "assigned", "string")
+            }
+            for name in sorted((called | named) - found):
+                found.add(name)
+                pending.append(name)
+    return frozenset(found)
+
+
+def undone(text: str, read: Read, reach: frozenset[str] | None = None) -> list[str]:
     """What the shell side connects, adds, or binds without keeping what disable() needs to
-    undo it, or without undoing it anywhere in the same file, and each place a name that
-    connects, adds, or binds stands other than in a call read here. It reads the file, not
-    which method runs when, so an undo anywhere in the file counts."""
+    undo it, or without undoing it in a function disable() reaches, and each place a name
+    that connects, adds, or binds stands other than in a call read here. Given no reach, as a
+    single snippet is checked, an undo anywhere in the file counts."""
     lines = re.split(r"\r\n|[\n\r  ]", text)
 
     def at(line: int) -> str:
         return f"line {line}: {lines[line - 1].strip()}"
 
-    undos = {(c.receiver, c.name, c.args[0] if c.args else None) for c in read.calls}
+    undos = {
+        (c.receiver, c.name, c.args[0] if c.args else None)
+        for c in read.calls
+        if reach is None or c.within in reach
+    }
     laters = {LATERS, *read.holds}
     found: list[str] = []
     readable: set[int] = set()
@@ -402,10 +431,15 @@ def undone(text: str, read: Read) -> list[str]:
                 found.append(f"a key grab whose action is not kept: {at(c.line)}")
             elif (c.receiver, "ungrab_accelerator", c.kept) not in undos:
                 found.append(f"{c.receiver} never ungrabs {c.kept}")
+    if reach is not None:
+        # An undo the file holds where disable() does not reach runs at some other time, if
+        # ever, so the finding says where it was looked for.
+        anywhere = set(undone(text, read))
+        found = [f if f in anywhere else f"in what disable() reaches, {f}" for f in found]
     # A name that starts with an underscore is a private member: the extension's own, whose
     # code is read where it is written, or GNOME Shell's, such as the magnifier's
     # _connectSignals, which undoes itself and is left to review.
-    for line, name, site in read.names:
+    for line, name, site, _ in read.names:
         if name in CODE and site not in ("declared", "key"):
             found.append(f"code this check cannot read: {at(line)}")
         kind = family(name, string=site == "string")
@@ -417,15 +451,109 @@ def undone(text: str, read: Read) -> list[str]:
     return found
 
 
+def reached_and_undone(sources: list[str]) -> list[list[str]]:
+    """undone() for each of the files the shell loads, counting only the undos in what
+    disable() reaches across them."""
+    reads = parse(sources)
+    whole = [read for read in reads if not isinstance(read, str)]
+    assert len(whole) == len(reads), [read for read in reads if isinstance(read, str)]
+    reach = reached(whole)
+    return [undone(source, read, reach) for source, read in zip(sources, whole, strict=True)]
+
+
 def test_disable_undoes_every_signal_source_and_keybinding() -> None:
     names = loaded("extension.js")
     texts = [(EXTENSION / name).read_text() for name in names]
     found = [
         f"{name}: {problem}"
-        for name, problems in zip(names, checked(texts), strict=True)
+        for name, problems in zip(names, reached_and_undone(texts), strict=True)
         for problem in problems
     ]
     assert not found, "\n".join(found)
+
+
+CONNECTS = "enable() { this._id = global.stage.connect('x', f); }"
+UNDO = "global.stage.disconnect(this._id);"
+
+
+def test_an_undo_counts_only_where_disable_reaches_it() -> None:
+    missed = [
+        f"class E {{ {CONNECTS} disable() {{}} _onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{}} }}\n{UNDO}",
+        f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
+        "disable() {} }",
+        f"class E {{ {CONNECTS} disable() {{}} }}\nfunction stop() {{ {UNDO} }}",
+    ]
+    for source in missed:
+        [found] = reached_and_undone([source])
+        assert any("never disconnected" in each for each in found), (source, found)
+
+
+def test_what_disable_assigns_declares_or_quotes_is_not_reached() -> None:
+    lock = "this._lockId = Main.screenShield.connect('locked', this._onLock);"
+    missed = [
+        f"class E {{ enable() {{ this._id = global.stage.connect('x', f); {lock} }} "
+        "disable() { Main.screenShield.disconnect(this._lockId); this._onLock = null; } "
+        f"_onLock = () => {{ {UNDO} }}; }}",
+        f"class E {{ enable() {{ this._id = global.stage.connect('x', f); "
+        f"this._onLock = () => {{ {UNDO} }}; }} disable() {{ this._onLock = null; }} }}",
+        f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
+        "disable() { log('enable'); } }",
+        f"class E {{ {CONNECTS} disable() {{ const stop = () => {{ {UNDO} }}; }} }}",
+        f"class E {{ {CONNECTS} disable() {{ [1].forEach(_onLock => 0); }} "
+        f"_onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ [this._a, this._onLock] = [null, null]; }} "
+        f"_onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ ({{onLock: this._onLock}} = {{}}); }} "
+        f"_onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ delete this._onLock; }} _onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ this._onLock++; }} _onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ const o = {{ stop: () => {{ {UNDO} }} }}; }} }}",
+        f"class E {{ {CONNECTS} disable() {{ const o = {{ stop() {{ {UNDO} }} }}; }} }}",
+        f"class E {{ {CONNECTS} disable() {{ try {{ f(); }} catch (_onLock) {{}} }} "
+        f"_onLock() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ class _onLock {{}} }} _onLock() {{ {UNDO} }} }}",
+        f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
+        "disable() { this._settings.set({enable: false}); } }",
+        f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
+        "disable() { const [enable] = this._pairs; } }",
+    ]
+    for source in missed:
+        [found] = reached_and_undone([source])
+        assert any("never disconnected" in each for each in found), (source, found)
+
+
+def test_an_undo_disable_reaches_by_call_callback_or_name_counts() -> None:
+    reached_ones = [
+        f"class E {{ {CONNECTS} disable() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ this._stop(); }} _stop() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ this._a?.b(); }} b() {{ this._c(); }} "
+        f"_c() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ [1].forEach(() => {{ {UNDO} }}); }} }}",
+        f"class E {{ {CONNECTS} disable() {{ this._all.forEach(this._drop, this); }} "
+        f"_drop() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ stop(); }} }}\nfunction stop() {{ {UNDO} }}",
+        f"class E {{ {CONNECTS} disable() {{ this._stop(); }} _stop = () => {{ {UNDO} }}; }}",
+        f"class E {{ {CONNECTS} disable() {{ this['_stop'](); }} _stop() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ const stop = () => {{ {UNDO} }}; stop(); }} }}",
+        f"class E {{ {CONNECTS} disable() {{ this?.['_stop'](); }} _stop() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ const o = {{ stop() {{ {UNDO} }} }}; o.stop(); }} }}",
+    ]
+    for source in reached_ones:
+        assert reached_and_undone([source]) == [[]], source
+
+
+def test_an_undo_in_another_file_counts_where_disable_reaches_it() -> None:
+    part = (
+        "export class Part { constructor() { this._id = global.stage.connect('x', f); } "
+        f"remove() {{ {UNDO} }} }}"
+    )
+    calls = "class E { enable() { this._part = new Part(); } disable() { this._part.remove(); } }"
+    forgets = "class E { enable() { this._part = new Part(); } disable() { this._part = null; } }"
+    assert reached_and_undone([calls, part]) == [[], []]
+    assert reached_and_undone([forgets, part])[1] == [
+        "in what disable() reaches, global.stage is never disconnected from this._id"
+    ]
 
 
 def test_the_check_finds_what_disable_leaves_behind() -> None:
