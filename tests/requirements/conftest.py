@@ -9,6 +9,7 @@ import pytest
 from pytest_bdd import given, parsers, then, when
 
 from tests.images import Box, Gray, crop, luma, zoomed
+from tests.paths import ROOT
 from tests.shell import SCREEN, Json, Shell, number, step
 
 # Where the pointer rests to zoom on the test pattern: left of and above it, so the zoomed
@@ -23,6 +24,12 @@ MODIFIER_SETTINGS: dict[tuple[str, ...], str] = {
     ("super", "ctrl"): "super-ctrl",
     ("super", "shift"): "super-shift",
 }
+# The app whose keyboard focus and text cursor zoom follows, and the title of its window.
+FOCUS_APP = ROOT / "tests" / "focus_app.js"
+FOCUS_APP_TITLE = "Focus test app"
+# Long enough for a new GTK window to give its widget focus and show it to GNOME's
+# accessibility, so the scenario's own Tab is the first focus change zoom sees.
+FOCUS_APP_READY_S = 1.0
 
 
 @dataclass
@@ -108,6 +115,18 @@ def wheel_steps(
     steps += [step(gap_ms, "notch", sign) for _ in range(notches)]
     steps += [step(20, "release", key) for key in reversed(keys)]
     return steps
+
+
+def open_focus_app(shell: Shell, *args: str) -> None:
+    """Open the focus test app full screen, and wait until it has focus and is ready."""
+    shell.client("gjs", "-m", str(FOCUS_APP), *args)
+    shell.wait_until(
+        "global.get_window_actors().some(a => a.meta_window.get_title() === "
+        f"'{FOCUS_APP_TITLE}' && a.meta_window.is_fullscreen())",
+        timeout_s=20,
+    )
+    shell.wait_until(f"global.display.focus_window?.get_title() === '{FOCUS_APP_TITLE}'")
+    time.sleep(FOCUS_APP_READY_S)
 
 
 @given("zoom is off")

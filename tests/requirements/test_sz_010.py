@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from tests.requirements.conftest import QUICK_GAP_MS, Scene
+from tests.requirements.conftest import QUICK_GAP_MS, Scene, open_focus_app
 from tests.shell import SCREEN, Json, Shell, number, step
 
 scenarios("SZ-010-zooming-keeps-the-pointer-where-it-is-when-gnome-s-following-pushes.feature")
@@ -40,15 +40,19 @@ Box = tuple[float, float, float, float]
 
 @dataclass
 class Drawn:
-    """Where the pointer was drawn on the screen before the scenario's last zoom began, where
-    the pointer itself was, where the view was before the pointer last moved, and where GNOME
-    had the view's middle before zoom came on."""
+    """Where the pointer was drawn on the screen when it was last put there, by a move, as
+    zoom came on, or as following moved the view under it; where the pointer itself was;
+    where the view was before the pointer last moved; and where GNOME had the view's middle
+    before zoom came on."""
 
     before: Point = (0.0, 0.0)
     pointer: Point = (0.0, 0.0)
     view_before: Point = (0.0, 0.0)
     middle_before: Point = (0.0, 0.0)
     view_port: Box = (0.0, 0.0, float(SCREEN[0]), float(SCREEN[1]))
+    # How far past the screen's right and bottom edges GNOME's push had taken the view when
+    # the pointer was last put there, as far as shows the pointer's image.
+    past: Point = (0.0, 0.0)
     # Whether GNOME holds what its view shows within the screen; its Extend Outside Screen
     # Edges lets it go past.
     within_screen: bool = True
@@ -76,17 +80,24 @@ def drawn_at(roi: Json, zoom: Json, pointer: Json, on: Json, view_port: Box) -> 
 
 
 def kept_at(
-    before: Point, pointer: Point, zoom: float, view_port: Box, within_screen: bool = True
+    before: Point,
+    pointer: Point,
+    zoom: float,
+    view_port: Box,
+    within_screen: bool = True,
+    past_then: Point = (0.0, 0.0),
 ) -> Point:
     """Where a pointer kept where it is is drawn at this zoom: where it was drawn, as near as
     keeps its whole image in the view, and the part of the screen the view shows within the
-    screen."""
+    screen, or past its right and bottom edges as far as shows that image when GNOME lets the
+    view go past them."""
     kept: list[float] = []
     for axis in (0, 1):
         origin, size = view_port[axis], view_port[axis + 2]
         place = min(max(before[axis], origin), origin + size - POINTER_IMAGE_PX * zoom)
         start = pointer[axis] - (place - origin) / zoom
-        past = 0.0 if within_screen else max(pointer[axis] + POINTER_IMAGE_PX - SCREEN[axis], 0.0)
+        needed = pointer[axis] + POINTER_IMAGE_PX - SCREEN[axis]
+        past = 0.0 if within_screen else max(needed, past_then[axis], 0.0)
         start = min(max(start, 0.0), SCREEN[axis] - size / zoom + past)
         kept.append(origin + (pointer[axis] - start) * zoom)
     return kept[0], kept[1]
@@ -118,6 +129,21 @@ def state(shell: Shell) -> dict[str, Json]:
 def drawn_now(shell: Shell, view_port: Box) -> Point:
     now = state(shell)
     return drawn_at(now["roi"], now["zoom"], now["pointer"], now["on"], view_port)
+
+
+def past_now(shell: Shell) -> Point:
+    """How far past the screen's right and bottom edges the view is now, as far as shows the
+    pointer's image, which is as far as GNOME's push takes it."""
+    now = state(shell)
+    if now["on"] is not True:
+        return 0.0, 0.0
+    roi = now["roi"]
+    assert isinstance(roi, list)
+    left, top, width, height = (number(value) for value in roi)
+    return (
+        min(max(left + width - SCREEN[0], 0.0), POINTER_IMAGE_PX),
+        min(max(top + height - SCREEN[1], 0.0), POINTER_IMAGE_PX),
+    )
 
 
 def record(shell: Shell) -> None:
@@ -165,6 +191,25 @@ def past_edges(shell: Shell, drawn: Drawn) -> None:
     drawn.within_screen = False
 
 
+@given("Scroll Zoom follows keyboard focus")
+def follows_focus(shell: Shell) -> None:
+    shell.call("scrollZoomTest.settings().set_boolean('follow-focus', true); return true;")
+
+
+@given("the focus test app is open")
+def focus_app(shell: Shell, request: pytest.FixtureRequest) -> None:
+    # The test pattern sits above windows, so it stays out of the app's way until it closes.
+    shell.call("return scrollZoomTest.hidePattern();")
+    request.addfinalizer(lambda: close_focus_app(shell))
+    open_focus_app(shell)
+
+
+def close_focus_app(shell: Shell) -> None:
+    shell.call("return scrollZoomTest.closeWindows();")
+    shell.wait_until("scrollZoomTest.windows().length === 0")
+    shell.call("return scrollZoomTest.showPattern();")
+
+
 @given(parsers.parse("the pointer is at {x:d}, {y:d}"))
 def pointer_at(shell: Shell, drawn: Drawn, x: int, y: int) -> None:
     shell.run_steps([step(1, "moveTo", x, y)])
@@ -175,6 +220,24 @@ def pointer_at(shell: Shell, drawn: Drawn, x: int, y: int) -> None:
     assert isinstance(roi, list)
     left, top, width, height = (number(value) for value in roi)
     drawn.middle_before = (left + width / 2, top + height / 2)
+
+
+@when("Tab moves keyboard focus to the middle button, and the view moves to show it")
+def tab_and_follow(shell: Shell, drawn: Drawn) -> None:
+    view = "Main.magnifier.getZoomRegions()[0].getROI().join()"
+    shell.call(f"globalThis.viewBeforeTab = {view}; return true;")
+    shell.run_steps([step(1, "press", "tab"), step(20, "release", "tab")])
+    # Scroll Zoom follows focus once the pointer has rested a second.
+    shell.wait_until(f"{view} !== globalThis.viewBeforeTab", timeout_s=5)
+    shell.settle()
+    # The pointer itself stays put, and is drawn where the view now shows it, which must be
+    # on the screen for the zoom that follows to keep it there.
+    drawn.before = drawn_now(shell, drawn.view_port)
+    drawn.past = past_now(shell)
+    x, y = drawn.before
+    assert 0 <= x <= SCREEN[0] and 0 <= y <= SCREEN[1], (
+        f"after following focus the pointer is drawn at {x:.0f}, {y:.0f}, off the screen"
+    )
 
 
 @when(parsers.parse("the pointer moves {pixels:d} pixels left"))
@@ -202,6 +265,7 @@ def move_pointer(shell: Shell, scene: Scene, drawn: Drawn, across_px: int) -> No
     recorded(shell, scene)
     drawn.before = drawn_now(shell, drawn.view_port)
     drawn.pointer = point(state(shell)["pointer"])
+    drawn.past = past_now(shell)
 
 
 @when(
@@ -374,6 +438,7 @@ def pointer_kept(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> No
                 number(frame["zoom"]),
                 drawn.view_port,
                 drawn.within_screen,
+                drawn.past,
             )
         else:
             kx, ky = drawn.pointer
