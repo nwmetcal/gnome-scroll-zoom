@@ -41,7 +41,9 @@ def silent_gnome_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 # Takes GNOME Shell's name on the bus and offers its Eval on a main loop it never runs, so a
 # call to it waits, as one to a shell that froze while starting does.
 FROZEN = """
-const {Gio, GLib} = imports.gi;
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+
 const bus = Gio.bus_get_sync(Gio.BusType.SESSION, null);
 const xml = '<node><interface name="org.gnome.Shell"><method name="Eval"><arg type="s" ' +
     'direction="in"/><arg type="b" direction="out"/><arg type="s" direction="out"/></method>' +
@@ -60,7 +62,7 @@ def frozen_gnome_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         pytest.skip("the frozen stand-in runs in gjs")
     script = tmp_path / "frozen.js"
     script.write_text(FROZEN)
-    stand_in_gnome_shell(tmp_path, monkeypatch, f"exec gjs {script}")
+    stand_in_gnome_shell(tmp_path, monkeypatch, f"exec gjs -m {script}")
 
 
 @pytest.mark.usefixtures("failing_gnome_shell")
