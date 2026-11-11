@@ -2,6 +2,7 @@
 // A full-screen app for SZ-008: text, and a bar that moves every frame, as a game or a video
 // keeps drawing. With --take-shortcuts it asks GNOME to let it take over the keyboard's
 // shortcuts, as a virtual machine, a remote desktop, or a game that grabs the keyboard does.
+// SZ-009 opens it as another app to take focus from the focus test app.
 //
 // Run inside the test shell:  dev/test-shell.sh client gjs -m tests/full_screen_app.js
 // As an X11 app, through the test shell's Xwayland: GDK_BACKEND=x11, and the DISPLAY and
