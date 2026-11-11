@@ -51,7 +51,7 @@ test shells share a loaded machine, on main's code as on the head's. So a review
 fails one reruns that scenario alone, once `pgrep -af '^gnome-shell --headless'` lists no test
 shell (anchored, so it never matches the reviewer's own shell, whose command holds the
 pattern), at the head and on main's code, and reports it as blocking only when the head fails
-alone and main passes alone. A mark the change makes true or changes fails on main by design,
+alone and main passes alone. A mark the change makes true or changes need not pass on main,
 so for it the head's run alone decides. When no moment comes with no other test shell up, the
 review says so, gives both runs as they ran, and reports the failure as a note.
 
@@ -85,4 +85,5 @@ checked, so the next reader knows what the review covers.
 - `Findings:` numbers each finding `blocking:` or `note:`. A blocking one has an `Evidence:`
   line, indented three spaces: the command, what it printed, and what the intent or rule
   requires. A blocking finding on a frame-rate mark gives both runs alone: the head's, which
-  failed, and main's, which passed, unless the change makes that mark true or changes it. With nothing found, the line reads `Findings: none`.
+  failed, and main's, which passed, unless the change makes that mark true or changes it.
+  With nothing found, the line reads `Findings: none`.
