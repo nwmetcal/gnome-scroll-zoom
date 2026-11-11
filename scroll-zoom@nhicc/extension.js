@@ -29,7 +29,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {Mode, RegionSmoothing} from './smoothing.js';
-import {SPIN_GAP_S, ZoomMotion} from './zoomMotion.js';
+import {ZoomMotion} from './zoomMotion.js';
 
 const A11Y_APPS_SCHEMA = 'org.gnome.desktop.a11y.applications';
 const MAGNIFIER_ENABLED_KEY = 'screen-magnifier-enabled';
@@ -116,8 +116,6 @@ export default class ScrollZoomExtension extends Extension {
         this._held = null;
         this._restId = 0;
         this._pushAnchor = null;
-        this._lastInputS = -Infinity;
-        this._swiping = false;
         this._pointerMovedAtS = -Infinity;
 
         this._motion = new ZoomMotion(Math.log(this._settings.get_double('max-zoom')));
@@ -208,12 +206,8 @@ export default class ScrollZoomExtension extends Extension {
     }
 
     _onCapturedEvent(event) {
-        if (event.type() !== Clutter.EventType.SCROLL)
-            return Clutter.EVENT_PROPAGATE;
-        // Fingers lifting end a swipe even when the keys were let go first.
-        if (event.get_scroll_finish_flags() & Clutter.ScrollFinishFlags.VERTICAL)
-            this._swiping = false;
-        if (!this._modifiersMatch(event.get_state()))
+        if (event.type() !== Clutter.EventType.SCROLL ||
+            !this._modifiersMatch(event.get_state()))
             return Clutter.EVENT_PROPAGATE;
 
         this._onScroll(event);
@@ -238,10 +232,8 @@ export default class ScrollZoomExtension extends Extension {
             const [, dy] = event.get_scroll_delta();
             const notches = -dy * sign;
             if (event.get_scroll_source() === Clutter.ScrollSource.FINGER) {
-                if (notches) {
+                if (notches)
                     this._input(notches, () => this._motion.touch(notches * stepLevel, time));
-                    this._swiping = true;
-                }
                 if (event.get_scroll_finish_flags() & Clutter.ScrollFinishFlags.VERTICAL) {
                     this._motion.release(time);
                     this._run();
@@ -264,12 +256,6 @@ export default class ScrollZoomExtension extends Extension {
         // Zooming out with zoom off does nothing.
         if (direction < 0 && this._motion.settled && !Main.magnifier.isActive())
             return;
-        // A new glide starts from where the pointer is drawn now. A spin of the wheel or a
-        // swipe is one glide even past the maximum zoom, where the zoom rests while it goes on.
-        const time = now();
-        if (this._motion.settled && !this._swiping && time - this._lastInputS > SPIN_GAP_S)
-            this._pushAnchor = null;
-        this._lastInputS = time;
         this._syncMotion();
         this._followPointer = true;
         apply();
@@ -519,14 +505,15 @@ export default class ScrollZoomExtension extends Extension {
 
     // Under GNOME's push, zooming keeps the pointer where it is drawn, so neither it nor what
     // is under it jumps. GNOME's own push zooms around the view's middle and then pushes the
-    // pointer back into view, toward an edge. The pointer stays where it was drawn as the
-    // glide began, as near as keeps the whole of its image, which GNOME's push holds in the
-    // view, within the view, so the view stays still as the pointer then moves, and a glide
-    // that zooms in deep and turns back brings it back. The view is GNOME's, on the whole
-    // screen or half of it, and what it shows stays within the screen unless GNOME's Extend
-    // Outside Screen Edges lets it go past, as GNOME's push does. `fromOff` is for zoom
-    // coming on, when the pointer is drawn where it is. Under GNOME's other following, no
-    // centre.
+    // pointer back into view, toward an edge. The pointer stays where it was drawn when it
+    // was last put there, by moving or as zoom came on, as near as keeps the whole of its
+    // image, which GNOME's push holds in the view, within the view, so the view stays still
+    // as the pointer then moves. That place is kept until the pointer moves, not until a
+    // glide ends, so where the pointer is drawn depends only on it and the zoom, and a zoom
+    // that goes in deep and turns back brings the pointer back however it got there. The view
+    // is GNOME's, on the whole screen or half of it, and what it shows stays within the
+    // screen. `fromOff` is for zoom coming on, when the pointer is drawn where it is. Under
+    // GNOME's other following, no centre.
     _pushCentre(factor, fromOff) {
         const region = this._region;
         if (this._magSettings.get_enum('mouse-tracking') !== MOUSE_PUSH ||
@@ -547,9 +534,12 @@ export default class ScrollZoomExtension extends Extension {
             const [origin, size] = [view[axis], view[axis + 2]];
             const kept = Math.min(Math.max(this._pushAnchor[axis], origin),
                 origin + size - image[axis] * factor);
-            let start = pointer[axis] - (kept - origin) / factor;
-            if (region._clampScrollingAtEdges)
-                start = Math.min(Math.max(start, 0), screen[axis] - size / factor);
+            // GNOME's Extend Outside Screen Edges lets the view past the right and bottom
+            // edges, as far as GNOME's push takes it to show the pointer's whole image.
+            const past = region._clampScrollingAtEdges
+                ? 0 : Math.max(pointer[axis] + image[axis] - screen[axis], 0);
+            const start = Math.min(Math.max(pointer[axis] - (kept - origin) / factor, 0),
+                screen[axis] - size / factor + past);
             return start + size / factor / 2;
         });
         return {xCenter, yCenter};
