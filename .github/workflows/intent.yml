@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   # The description's Intent section declares every requirement the branch touches, and each
-  # release tag the description names in code is the one the release workflow takes.
+  # tag its release commands name is the one the release workflow takes.
   intent:
     runs-on: ubuntu-24.04
     timeout-minutes: 5

@@ -7,8 +7,10 @@ The Intent section, from .github/PULL_REQUEST_TEMPLATE.md, names the requirement
 makes true, the ones it touches without making them newly true, and when it is done. A branch
 touches a requirement when it changes its feature or its steps.
 
-A release tag the description names in code, as an owner's release steps do, is the one the
-release workflow takes: v followed by the extension's version-name.
+A tag that a command making or publishing a release tag names, as an owner's release steps
+do, is the one the release workflow takes: v followed by the extension's version-name. The
+command is read wherever it stands, in code, a quote, or prose, since GitHub's own reading of
+what is code takes a Markdown parser, and a tag a release command names is wrong anywhere.
 """
 
 import argparse
@@ -24,10 +26,18 @@ FEATURE = re.compile(r"^requirements/(SZ-\d{3})[-.]")
 STEPS = re.compile(r"^tests/requirements/test_sz_(\d{3})\.py$")
 PLACEHOLDER = "what is true once this is done"
 METADATA = Path(__file__).resolve().parent.parent / "scroll-zoom@nhicc" / "metadata.json"
-# Fenced blocks first, so an inline span never starts inside one; a list item indents its fence.
-CODE = re.compile(r"^[ \t]*(```|~~~)[^\n]*\n.*?^[ \t]*\1|`[^`\n]+`", re.M | re.S)
-# With a suffix such as -rc1, which the release workflow refuses as it does any other tag.
-TAG = re.compile(r"(?<![\w.])v\d+\.\d+\.\d+(?:-[\w.]+)?(?![\w.])")
+# A command that makes or publishes a release tag, and its arguments up to where it ends.
+RELEASE = re.compile(r"\b(git\s+tag|git\s+push|gh\s+release\s+create)\b([^\n`;&|]*)")
+# The rest of an inline span that runs on past its line, as GitHub's spans do within a
+# paragraph: up to its closing backtick or the paragraph's end.
+SPAN_REST = re.compile(r"[^`]*?(?=`|\n[ \t>]*\n|\Z)", re.S)
+# A wrapped line's indent and a quote's marks.
+CONTINUED = re.compile(r"\n[ \t>]*")
+# Flags that make a command name a tag only to delete, list, or verify it.
+NOT_MADE = frozenset({"-d", "--delete", "-l", "--list", "-v", "--verify"})
+# With whatever a tag name carries after the numbers, such as -rc1 or +1, which the release
+# workflow refuses as it does any other tag.
+TAG = re.compile(r"v\d+\.\d+\.\d+\S*")
 
 
 @dataclass(frozen=True)
@@ -114,9 +124,37 @@ def version_name() -> str:
     return str(json.loads(METADATA.read_text())["version-name"])
 
 
+def _named(word: str) -> list[str]:
+    """The tags one argument names: a tag, refs/tags/ and a tag, or a refspec of them. A
+    refspec with no source deletes what it names."""
+    word = word.strip("'\"()[]{}<>,!?")
+    if word.startswith(":"):
+        return []
+    sides = [side.removeprefix("+").removeprefix("refs/tags/") for side in word.split(":")]
+    return [tag for side in sides if TAG.fullmatch(tag := side.split("..")[0].rstrip("."))]
+
+
+def release_tags(body: str) -> set[str]:
+    """The tags the description's release commands name: git tag, git push, and gh release
+    create, up to a line break, a backtick, ;, &, or |, and on past the line break while the
+    inline span the command stands in runs on."""
+    found: set[str] = set()
+    for command in RELEASE.finditer(body):
+        args = command.group(2)
+        line = body[body.rfind("\n", 0, command.start()) + 1 : command.start()]
+        if len(re.findall(r"`+", line)) % 2 and body.startswith("\n", command.end()):
+            span = SPAN_REST.match(body, command.end())
+            rest = CONTINUED.sub(" ", span.group(0) if span else "")
+            args = re.split(r"[;&|]", args + rest, maxsplit=1)[0]
+        words = args.split()
+        if not NOT_MADE & set(words):
+            found.update(tag for word in words for tag in _named(word))
+    return found
+
+
 def tag_problems(body: str, version: str) -> list[str]:
-    """Each release tag the description names in code that the release workflow would refuse."""
-    named = {tag.group(0) for code in CODE.finditer(body) for tag in TAG.finditer(code.group(0))}
+    """Each tag the description's release commands name that the release workflow refuses."""
+    named = release_tags(body)
     return [
         f"names the tag {tag}, but version-name is {version}: "
         f"the release workflow takes only v{version}"
