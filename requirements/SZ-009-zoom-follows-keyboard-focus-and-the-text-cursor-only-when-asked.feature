@@ -7,13 +7,13 @@ Feature: SZ-009 Zoom follows keyboard focus and the text cursor only when asked
   following keyboard focus and following the text cursor are two settings of its own, both
   off until the person turns them on, whatever GNOME's own settings for them say, and a
   change to GNOME's own settings while Scroll Zoom is on does not bring them back. Turned on,
-  each brings the whole of the focused control or the text cursor into view, from any side and
-  each time it moves, moving the view only as far as that takes, so what was in view stays
-  close by, and leaves the other kind of move alone. A follow GNOME was holding back when
-  following is turned off, or when Scroll Zoom comes on, never lands, and Scroll Zoom coming
-  on, at login or as the screen unlocks, undoes the following GNOME's settings asked for before
-  it. Scroll Zoom leaves GNOME's own settings for following as they are, and turning Scroll
-  Zoom off hands GNOME's own following back.
+  each brings the whole of a focused control that fits in the view, or the text cursor, into
+  view, from any side and each time it moves, moving the view only as far as that takes, so
+  what was in view stays close by, and leaves the other kind of move alone. A follow GNOME was
+  holding back when following is turned off, or when Scroll Zoom comes on, never lands, and
+  Scroll Zoom coming on, at login or as the screen unlocks, undoes the following GNOME's
+  settings asked for before it. Scroll Zoom leaves GNOME's own settings for following as they
+  are, and turning Scroll Zoom off hands GNOME's own following back.
 
   The test app fills the screen. Its first button is at the top left, under the view the
   pointer puts at 200, 130 at 3x. Its middle button, covering 700 to 820 across and 380 to 420
