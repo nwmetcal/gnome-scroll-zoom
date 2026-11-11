@@ -8,8 +8,10 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
+from functools import cache
 from pathlib import Path
 from typing import cast
 
@@ -46,9 +48,9 @@ DONATIONS = {
     "patreon",
     "paypal",
 }
-RELATIVE_IMPORT = re.compile(r"""^import\b[^;]*?\bfrom\s+['"]\./([\w.-]+\.js)['"]""", re.M | re.S)
-GI_IMPORT = re.compile(r"""['"]gi://(\w+)|\bimports\.gi\.(\w+)|\{([^{}]*)\}\s*=\s*imports\.gi\b""")
-DEPRECATED = re.compile(r"\bimports\.(?:byteArray|lang|mainloop)\b|\brun_dispose\(")
+# The older importer's modules the guidelines refuse, and the call they refuse.
+DEPRECATED = {"imports.byteArray", "imports.lang", "imports.mainloop"}
+DISPOSE = "run_dispose"
 SHELL_ONLY = {"Clutter", "Meta", "St", "Shell"}
 GTK_ONLY = {"Gdk", "Gtk", "Adw"}
 KEYBINDINGS = {"addKeybinding": "removeKeybinding", "add_keybinding": "remove_keybinding"}
@@ -150,8 +152,13 @@ def _donation_problems(donations: object) -> list[str]:
     return found
 
 
-def loaded(entry: str) -> list[str]:
-    """The file and every module it imports from the extension's folder, in import order."""
+def extension_file(name: str) -> str:
+    return (EXTENSION / name).read_text()
+
+
+def loaded(entry: str, source: Callable[[str], str] = extension_file) -> list[str]:
+    """The file and every module it imports or re-exports from the extension's folder, in
+    import order, as gjs's parser reads them."""
     seen: list[str] = []
     pending = [entry]
     while pending:
@@ -159,7 +166,7 @@ def loaded(entry: str) -> list[str]:
         if name in seen:
             continue
         seen.append(name)
-        pending += RELATIVE_IMPORT.findall((EXTENSION / name).read_text())
+        pending += [path[2:] for _, path in whole(source(name)).imports if path.startswith("./")]
     return seen
 
 
@@ -173,11 +180,24 @@ def schema() -> tuple[str, str, str]:
 
 
 def libraries(text: str) -> set[str]:
-    """The GObject libraries a module imports, as gi:// or through the older imports.gi."""
+    """The GObject libraries a module imports, as gi:// or through the older imports.gi, as
+    gjs's parser reads them."""
     found: set[str] = set()
-    for url, member, destructured in GI_IMPORT.findall(text):
-        found |= {url, member} | {n.split(":")[0].strip() for n in destructured.split(",")}
-    return found - {""}
+    for _, path in whole(text).imports:
+        if path.startswith("gi://"):
+            found.add(path.removeprefix("gi://").split("?")[0])
+        elif path.startswith("imports.gi."):
+            found.add(path.split(".")[2])
+    return found
+
+
+def deprecated(text: str) -> list[str]:
+    """Each of the older importer's modules the guidelines refuse that a module reaches, and
+    each run_dispose() it calls, as gjs's parser reads them."""
+    read = whole(text)
+    paths = sorted({path for _, path in read.imports} & DEPRECATED)
+    called = [f"line {c.line}: {DISPOSE}()" for c in read.calls if c.name == DISPOSE]
+    return paths + called
 
 
 def test_the_bundle_holds_only_what_the_extension_loads(tmp_path: Path) -> None:
@@ -252,7 +272,7 @@ def test_each_process_imports_only_its_own_libraries() -> None:
             text = (EXTENSION / name).read_text()
             wrong = sorted(libraries(text) & refused)
             assert not wrong, f"{name}, loaded by {entry}, imports {wrong}"
-            assert not DEPRECATED.search(text), f"{name}: {DEPRECATED.search(text)}"
+            assert not deprecated(text), f"{name}: {deprecated(text)}"
 
 
 def test_the_library_check_reads_each_way_to_import() -> None:
@@ -262,6 +282,55 @@ def test_the_library_check_reads_each_way_to_import() -> None:
     assert libraries(text) == {"Gtk", "Adw", "Gdk", "St"}
     lazy = "class A {\n    enable() {\n        const {Gtk} = imports.gi;\n    }\n}"
     assert libraries(lazy) == {"Gtk"}
+    for spelled in (
+        "const gi = imports.gi;\nconst Gtk = gi.Gtk;",
+        "const Gtk = imports.gi['Gtk'];",
+        "const Gtk = imports['gi'].Gtk;",
+        "const {gi: {Gtk}} = imports;",
+        "const {gi} = imports;\ngi.Gtk.init();",
+        "const i = imports;\nconst g = i.gi;\ng.Gtk.init();",
+        "import * as G from 'gi://Gtk?version=4.0';",
+        "  import Gtk from 'gi://Gtk';",
+        "export {default} from 'gi://Gtk';",
+    ):
+        assert libraries(spelled) == {"Gtk"}, spelled
+    unread = "// imports.gi.Gtk\nconst s = 'gi://Gtk';\nconst t = `imports.gi.Gtk`;"
+    assert libraries(unread) == set()
+
+
+def test_the_deprecated_check_reads_each_way_to_reach_a_module() -> None:
+    for spelled in (
+        "const Mainloop = imports.mainloop;",
+        "imports['mainloop'].run('x');",
+        "const {lang} = imports;",
+        "const i = imports;\ni.byteArray.toString(b);",
+        "this._actor.run_dispose();",
+    ):
+        assert deprecated(spelled), spelled
+    for clean in ("const GLib = imports.gi.GLib;", "// imports.lang", "const s = 'imports.lang';"):
+        assert not deprecated(clean), clean
+
+
+def test_loaded_follows_every_way_to_import_a_module() -> None:
+    sources = {
+        "extension.js": (
+            "  import {a} from './a.js';\nexport {b} from './b.js';\nimport{c}from'./c.js';\n"
+            "// import d from './d.js';\nconst e = \"import e from './e.js'\";"
+        ),
+        "a.js": "export * from './f.js';",
+        "b.js": "",
+        "c.js": "import GLib from 'gi://GLib';",
+        "f.js": "export * as g from './g.js';",
+        "g.js": "",
+    }
+    assert loaded("extension.js", sources.__getitem__) == [
+        "extension.js",
+        "a.js",
+        "b.js",
+        "c.js",
+        "f.js",
+        "g.js",
+    ]
 
 
 @dataclass(frozen=True)
@@ -287,6 +356,7 @@ class Read:
     holds: frozenset[str]
     held: tuple[tuple[int, str, str], ...]
     glib: frozenset[str]
+    imports: tuple[tuple[int, str], ...]
 
 
 def _read(found: Json) -> Read | str:
@@ -310,7 +380,8 @@ def _read(found: Json) -> Read | str:
     )
     held = tuple((cast(int, h[0]), cast(str, h[1]), cast(str, h[2])) for h in facts["held"])
     holds = frozenset(cast("list[str]", facts["holds"]))
-    return Read(calls, names, holds, held, frozenset(cast("list[str]", facts["glib"])))
+    imports = tuple((cast(int, i[0]), cast(str, i[1])) for i in facts["imports"])
+    return Read(calls, names, holds, held, frozenset(cast("list[str]", facts["glib"])), imports)
 
 
 def parse(sources: list[str]) -> list[Read | str]:
@@ -324,6 +395,15 @@ def parse(sources: list[str]) -> list[Read | str]:
         raise RuntimeError(f"gjs could not read the sources: {done.stderr.strip()}")
     found: list[Json] = json.loads(done.stdout)
     return [_read(each) for each in found]
+
+
+@cache
+def whole(source: str) -> Read:
+    """What gjs's parser reads in one source the bundle holds, which must parse."""
+    [read] = parse([source])
+    if isinstance(read, str):
+        raise ValueError(f"gjs cannot parse a source the bundle holds: {read}")
+    return read
 
 
 def checked(sources: list[str]) -> list[list[str]]:

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// What gjs's own parser reads in each source, for the undo check in test_bundle.py. Reading
-// the syntax tree, not the text, a comment, a string, or a regex can never pass for code,
-// and a name the parser can resolve, such as obj['con' + 'nect'], is read as that name.
+// What gjs's own parser reads in each source, for the bundle's checks in test_bundle.py.
+// Reading the syntax tree, not the text, a comment, a string, or a regex can never pass for
+// code, and a name the parser can resolve, such as obj['con' + 'nect'], is read as that name.
 //
 //   gjs -m tests/style/js_nodes.js SOURCES.json
 //
@@ -22,6 +22,10 @@
 //   held: each place a held name stands, as [line, name, role]: role is hold, assigned,
 //     laters for the receiver of its own .add( or .remove(, or other.
 //   glib: the names GLib goes by in the file.
+//   imports: each module the source imports or re-exports, by its specifier, such as
+//     gi://Gtk or ./zoomMotion.js, and each path it reaches through gjs's older importer, such
+//     as imports.gi.Gtk, as [line, path], however the path is spelled: a member written with a
+//     string, a name that holds part of it, or a pattern that takes names out of it.
 
 import GLib from 'gi://GLib';
 
@@ -202,6 +206,60 @@ function read(ast) {
     return {calls, names, holds: [...heldNames], held, glib: [...glib]};
 }
 
+function importsOf(ast) {
+    const found = [];
+    const aliases = new Map();
+    const nameOf = (node, computed) => {
+        if (node?.type === 'Identifier' && !computed)
+            return node.name;
+        return node?.type === 'Literal' && typeof node.value === 'string' ? node.value : null;
+    };
+    // The older importer's path a node stands for, as imports.gi.Gtk, or null.
+    function importer(node) {
+        if (node?.type === 'Identifier')
+            return node.name === 'imports' ? 'imports' : aliases.get(node.name) ?? null;
+        if (!node || !isMember(node))
+            return null;
+        const object = importer(node.object);
+        const name = nameOf(node.property, node.computed);
+        return object === null || name === null ? null : `${object}.${name}`;
+    }
+    // A name or a pattern given part of a path, as const {Gtk, gi: {Gdk}} = imports.
+    function bind(target, base, line, record) {
+        if (target?.type === 'Identifier') {
+            aliases.set(target.name, base);
+            if (record)
+                found.push([line, base]);
+        } else if (target?.type === 'ObjectPattern') {
+            for (const property of target.properties) {
+                const key = nameOf(property.key, property.computed);
+                if (key !== null)
+                    bind(property.value, `${base}.${key}`, line, record);
+            }
+        }
+    }
+    function walk(node, record) {
+        const line = node.loc?.start.line ?? 0;
+        const source = (node.moduleRequest?.source ?? node.source)?.value;
+        if (record && ['ImportDeclaration', 'ExportDeclaration'].includes(node.type) &&
+            typeof source === 'string')
+            found.push([line, source]);
+        if (node.type === 'VariableDeclarator' && importer(node.init) !== null)
+            bind(node.id, importer(node.init), line, record);
+        if (node.type === 'AssignmentExpression' && importer(node.right) !== null)
+            bind(node.left, importer(node.right), line, record);
+        if (record && isMember(node) && importer(node) !== null)
+            found.push([line, importer(node)]);
+        for (const [, child] of children(node))
+            walk(child, record);
+    }
+    // Names first, twice so a name given another name's path is known, then the paths.
+    walk(ast, false);
+    walk(ast, false);
+    walk(ast, true);
+    return found;
+}
+
 const [, contents] = GLib.file_get_contents(ARGV[0]);
 const sources = JSON.parse(new TextDecoder().decode(contents));
 print(JSON.stringify(sources.map(source => {
@@ -213,5 +271,5 @@ print(JSON.stringify(sources.map(source => {
             throw error;
         return error.message;
     }
-    return read(ast);
+    return {...read(ast), imports: importsOf(ast)};
 })));
