@@ -116,7 +116,10 @@ EOF
     # given up on in time too.
     local deadline=$((${EPOCHREALTIME/[.,]/} + ${TEST_SHELL_START_S:-30} * 1000000))
     while ((${EPOCHREALTIME/[.,]/} < deadline)); do
-        if [[ -s "$ROOT/bus" ]] && shell_call --timeout 1 --object-path /org/gnome/Shell \
+        # timeout, not gdbus's --timeout, which leaves its first question, what the object
+        # offers, waiting 3 s on a shell that has stopped outright.
+        if [[ -s "$ROOT/bus" ]] && test_env timeout 1 gdbus call --session --dest org.gnome.Shell \
+            --object-path /org/gnome/Shell \
             --method org.gnome.Shell.Eval 'Main.layoutManager._startingUp === false' 2>/dev/null |
             grep -q "true, 'true'"; then
             # Leave the overview the shell opens at startup.
