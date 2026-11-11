@@ -6,9 +6,13 @@
 The Intent section, from .github/PULL_REQUEST_TEMPLATE.md, names the requirements the change
 makes true, the ones it touches without making them newly true, and when it is done. A branch
 touches a requirement when it changes its feature or its steps.
+
+A release tag the description names in code, as an owner's release steps do, is the one the
+release workflow takes: v followed by the extension's version-name.
 """
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -19,6 +23,11 @@ ID = re.compile(r"SZ-\d{3}")
 FEATURE = re.compile(r"^requirements/(SZ-\d{3})[-.]")
 STEPS = re.compile(r"^tests/requirements/test_sz_(\d{3})\.py$")
 PLACEHOLDER = "what is true once this is done"
+METADATA = Path(__file__).resolve().parent.parent / "scroll-zoom@nhicc" / "metadata.json"
+# Fenced blocks first, so an inline span never starts inside one; a list item indents its fence.
+CODE = re.compile(r"^[ \t]*(```|~~~)[^\n]*\n.*?^[ \t]*\1|`[^`\n]+`", re.M | re.S)
+# With a suffix such as -rc1, which the release workflow refuses as it does any other tag.
+TAG = re.compile(r"(?<![\w.])v\d+\.\d+\.\d+(?:-[\w.]+)?(?![\w.])")
 
 
 @dataclass(frozen=True)
@@ -100,17 +109,34 @@ def problems(intent: Intent, paths: list[str]) -> list[str]:
     ]
 
 
+def version_name() -> str:
+    """The extension's version-name, which the release workflow holds a tag to."""
+    return str(json.loads(METADATA.read_text())["version-name"])
+
+
+def tag_problems(body: str, version: str) -> list[str]:
+    """Each release tag the description names in code that the release workflow would refuse."""
+    named = {tag.group(0) for code in CODE.finditer(body) for tag in TAG.finditer(code.group(0))}
+    return [
+        f"names the tag {tag}, but version-name is {version}: "
+        f"the release workflow takes only v{version}"
+        for tag in sorted(named)
+        if tag != f"v{version}"
+    ]
+
+
 def main(argv: list[str]) -> int:
     """Print each problem and return 1, or return 0."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--body", type=Path, required=True, help="the description, as a file")
     parser.add_argument("--base", default="origin/main", help="the branch it merges into")
     args = parser.parse_args(argv)
-    intent = parsed(Path(args.body).read_text())
+    body = Path(args.body).read_text()
+    intent = parsed(body)
     if isinstance(intent, str):
         print(f"intent: {intent}", file=sys.stderr)
         return 1
-    found = problems(intent, changed_paths(str(args.base)))
+    found = problems(intent, changed_paths(str(args.base))) + tag_problems(body, version_name())
     for problem in found:
         print(f"intent: {problem}", file=sys.stderr)
     return 1 if found else 0
