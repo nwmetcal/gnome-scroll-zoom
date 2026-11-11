@@ -113,13 +113,15 @@
   th, td { text-align: left; vertical-align: top; padding: 0.55rem 0.6rem; border-bottom: 0.06rem solid var(--line); }
   th { font-weight: 700; }
   /* A combination of keys keeps to one line, as a key does, wherever the keys table fits with
-     it whole. Where the page is narrower, as at 400% zoom, a combination may break at the
-     zero-width space after a plus, so the table fits instead of scrolling sideways. 14.6em is the
-     table's least width with combinations whole, less the page's right margin, which it may
-     fill. */
+     it whole. Where the page is narrower, as at 400% zoom, a copy with a zero-width space after
+     each plus takes its place, so it breaks there and the table fits instead of scrolling
+     sideways. Two copies, shown by turns, because Firefox keeps a break it took once a break
+     chance goes away, as when the page is zoomed back out. 14.63em is the table's least width
+     with each combination whole, 312.5 px in Noto Sans, less the 20 px of right margin it may
+     run into. */
   main { container-type: inline-size; }
-  .keys { white-space: nowrap; }
-  @container (max-width: 14.6em) { .keys { white-space: normal; } }
+  .wraps { display: none; }
+  @container (max-width: 14.63em) { .whole { display: none; } .wraps { display: inline; } }
   kbd {
     font-family: inherit; font-weight: 700; padding: 0 0.3rem; border: 0.06rem solid var(--line);
     border-radius: 0.3rem; background: var(--panel); white-space: nowrap;
@@ -264,9 +266,9 @@
       <tbody>
         <tr><td>Hold <kbd>Super</kbd> and scroll up or down</td><td>Zoom in or out around the pointer</td></tr>
         <tr><td>Zoom all the way out</td><td>Turn zoom off</td></tr>
-        <tr><td><span class="keys"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>8</kbd></span></td><td>Turn zoom on or off, at the last level you used</td></tr>
-        <tr><td><span class="keys"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>=</kbd></span> and <span class="keys"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>-</kbd></span></td><td>Zoom in and out with the keyboard</td></tr>
-        <tr><td><span class="keys"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>\</kbd></span></td><td>Switch smoothing off (hard pixels) and back on</td></tr>
+        <tr><td><span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>8</kbd></span><span class="wraps"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>8</kbd></span></td><td>Turn zoom on or off, at the last level you used</td></tr>
+        <tr><td><span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>=</kbd></span><span class="wraps"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>=</kbd></span> and <span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>-</kbd></span><span class="wraps"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>-</kbd></span></td><td>Zoom in and out with the keyboard</td></tr>
+        <tr><td><span class="whole"><kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>\</kbd></span><span class="wraps"><kbd>Super</kbd>+&#8203;<kbd>Alt</kbd>+&#8203;<kbd>\</kbd></span></td><td>Switch smoothing off (hard pixels) and back on</td></tr>
       </tbody>
     </table>
     <p>These are the same keys a Mac uses, with Super in place of Cmd and Alt in place of Option.
