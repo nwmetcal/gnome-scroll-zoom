@@ -531,26 +531,31 @@ export default class ScrollZoomExtension extends Extension {
         if (fromOff || !this._pushAnchor) {
             const roi = region.getROI();
             const was = region.getMagFactor()[0];
-            // Where the pointer is drawn, and how far past the screen's right and bottom
-            // edges GNOME's push has left the view, which is as far as shows its image.
+            // Where the pointer is drawn, and how far past the screen's edges the view is:
+            // GNOME's push takes it past the right and bottom as far as shows the pointer's
+            // image, and following past any edge as far as the room it leaves.
+            const reach = axis => Math.max(image[axis], FOLLOW_MARGIN_PX);
             this._pushAnchor = [0, 1].map(axis => fromOff
-                ? {place: pointer[axis], past: 0}
+                ? {place: pointer[axis], before: 0, past: 0}
                 : {
                     place: view[axis] + (pointer[axis] - roi[axis]) * was,
+                    before: Math.min(Math.max(-roi[axis], 0), reach(axis)),
                     past: Math.min(Math.max(roi[axis] + roi[axis + 2] - screen[axis], 0),
-                        image[axis]),
+                        reach(axis)),
                 });
         }
         const [xCenter, yCenter] = [0, 1].map(axis => {
             const [origin, size] = [view[axis], view[axis + 2]];
-            const {place, past: pastThen} = this._pushAnchor[axis];
+            const {place, before, past: pastThen} = this._pushAnchor[axis];
             const kept = Math.min(Math.max(place, origin), origin + size - image[axis] * factor);
-            // GNOME's Extend Outside Screen Edges lets the view past the right and bottom
-            // edges, as far as GNOME's push takes it to show the pointer's whole image, now or
-            // when the pointer was put where it is.
-            const past = region._clampScrollingAtEdges
+            // GNOME's Extend Outside Screen Edges lets the view past the screen's edges, as
+            // far as it was when the pointer was put where it is, or as GNOME's push takes it
+            // past the right and bottom to show the pointer's whole image now.
+            const clamped = region._clampScrollingAtEdges;
+            const low = clamped ? 0 : before;
+            const past = clamped
                 ? 0 : Math.max(pointer[axis] + image[axis] - screen[axis], pastThen, 0);
-            const start = Math.min(Math.max(pointer[axis] - (kept - origin) / factor, 0),
+            const start = Math.min(Math.max(pointer[axis] - (kept - origin) / factor, -low),
                 screen[axis] - size / factor + past);
             return start + size / factor / 2;
         });
