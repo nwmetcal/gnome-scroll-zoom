@@ -10,13 +10,18 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from tests.paths import ROOT
-from tests.requirements.conftest import Scene, zoom_to
+from tests.requirements.conftest import (
+    FOCUS_APP_READY_S,
+    FOCUS_APP_TITLE,
+    Scene,
+    open_focus_app,
+    zoom_to,
+)
 from tests.shell import SCREEN, Json, Shell, number, step
 
 scenarios("SZ-009-zoom-follows-keyboard-focus-and-the-text-cursor-only-when-asked.feature")
 
-APP = ROOT / "tests" / "focus_app.js"
-TITLE = "Focus test app"
+TITLE = FOCUS_APP_TITLE
 # Another app to take focus: SZ-008's full-screen app, which has nothing that takes focus.
 OTHER_APP = ROOT / "tests" / "full_screen_app.js"
 OTHER_TITLE = "Full-screen test app"
@@ -43,9 +48,6 @@ GNOME_FOLLOWING = {
 # back, since it waits for the pointer to rest 1000 ms.
 WIGGLE_PX = 2
 WIGGLE_GAP_MS = 50
-# Long enough for a new GTK window to give its widget focus and show it to GNOME's
-# accessibility, so the scenario's own Tab is the first focus change zoom sees.
-APP_READY_S = 1.0
 
 
 @dataclass
@@ -105,17 +107,6 @@ def pointer_view_offset(roi: Json, zoom: Json, pointer: Json) -> float:
 def set_gnome_following(shell: Shell, value: str) -> None:
     sets = " ".join(f"m.set_string('{key}', '{value}');" for key in FOLLOWING_KEYS)
     shell.call(f"const m = {MAGNIFIER}; {sets} return true;")
-
-
-def open_app(shell: Shell, *args: str) -> None:
-    shell.client("gjs", "-m", str(APP), *args)
-    shell.wait_until(
-        "global.get_window_actors().some(a => a.meta_window.get_title() === "
-        f"'{TITLE}' && a.meta_window.is_fullscreen())",
-        timeout_s=20,
-    )
-    shell.wait_until(f"global.display.focus_window?.get_title() === '{TITLE}'")
-    time.sleep(APP_READY_S)
 
 
 @given(parsers.parse("GNOME's own settings {how}"))
@@ -185,17 +176,17 @@ def wiggle(pointer: tuple[float, float], duration_ms: int) -> list[list[Json]]:
 
 @given("the focus test app is open with its first button focused")
 def app_open(shell: Shell) -> None:
-    open_app(shell)
+    open_focus_app(shell)
 
 
 @given("the focus test app is open, moving the text cursor in its line on its own")
 def app_printing(shell: Shell) -> None:
-    open_app(shell, "--print")
+    open_focus_app(shell, "--print")
 
 
 @given("the focus test app is open with a text area bigger than the view")
 def app_big(shell: Shell) -> None:
-    open_app(shell, "--big")
+    open_focus_app(shell, "--big")
 
 
 @given(parsers.parse("zoom is on at {zoom:g}x with the pointer at {x:d}, {y:d}"))
@@ -234,7 +225,7 @@ def zoom_off_and_back(shell: Shell, scene: Scene, watch: Watch) -> None:
         [step(20, "press", "shift"), step(20, "press", "tab")]
         + [step(20, "release", "tab"), step(20, "release", "shift")]
     )
-    time.sleep(APP_READY_S)
+    time.sleep(FOCUS_APP_READY_S)
     zoom_to(shell, scene, scene.zoom, scene.pointer)
     watch.since = time.monotonic()
     watch.start = pointer_view(scene.zoom, scene.pointer)

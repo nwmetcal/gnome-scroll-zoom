@@ -100,6 +100,13 @@
             this.pointer.notify_absolute_motion(microseconds(), x, y);
         },
 
+        // A mark in the frames being recorded, so a step can tell the frames drawn before an
+        // input from those drawn after it.
+        mark() {
+            if (this._paintId)
+                this.frames.push({mark: true, ms: microseconds() / 1000});
+        },
+
         record() {
             this.frames = [];
             if (this._paintId)
@@ -173,9 +180,10 @@
             return true;
         },
 
-        // A known starting point: zoom off, GNOME's level at 2x, the view
-        // centred on the pointer, GNOME's following of focus and the text cursor at its
-        // defaults, and the extension at its defaults.
+        // A known starting point: zoom off, GNOME's level at 2x, its view on the whole screen
+        // and held within it, its view's middle at the screen's middle with its following at
+        // rest, GNOME's following of focus and the text cursor at its defaults, and the
+        // extension at its defaults.
         reset() {
             if (this._paintId)
                 this.stopRecording();
@@ -185,6 +193,8 @@
             const gio = imports.gi.Gio;
             const magnifier = new gio.Settings({schema_id: 'org.gnome.desktop.a11y.magnifier'});
             magnifier.set_string('mouse-tracking', 'centered');
+            magnifier.reset('screen-position');
+            magnifier.reset('scroll-at-edges');
             magnifier.reset('focus-tracking');
             magnifier.reset('caret-tracking');
             new gio.Settings({schema_id: 'org.gnome.desktop.a11y.applications'})
@@ -198,6 +208,11 @@
             // Its zoom region skips a focus change or a text cursor move to where it saw the
             // last one, so clear those as a fresh session starts.
             Object.assign(region(), {_xFocus: 0, _yFocus: 0, _xCaret: 0, _yCaret: 0});
+            // GNOME's own following stays on for a second after the pointer last moved, and
+            // with the pointer forgotten it would centre the view on nothing as the level
+            // changes, leaving the view's middle not a number. Putting the view's middle back at
+            // the screen's middle ends that following, so each scenario starts from one place.
+            region().scrollContentsTo(global.screen_width / 2, global.screen_height / 2);
             magnifier.set_double('mag-factor', 2.0);
             Main.overview.hide();
             for (const key of Object.keys(KEYS))

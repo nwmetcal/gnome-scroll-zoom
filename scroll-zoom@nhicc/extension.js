@@ -77,6 +77,8 @@ const FOLLOWING = [
         GDesktopEnums.MagnifierCaretTrackingMode],
 ];
 
+const MOUSE_PUSH = GDesktopEnums.MagnifierMouseTrackingMode.PUSH;
+
 // Room following leaves around what it brings into view, in pixels of the unzoomed screen:
 // the room GNOME's own push leaves for the pointer. Less when the view has less to spare.
 const FOLLOW_MARGIN_PX = 24;
@@ -113,6 +115,7 @@ export default class ScrollZoomExtension extends Extension {
         this._smoothing = null;
         this._held = null;
         this._restId = 0;
+        this._pushAnchor = null;
         this._pointerMovedAtS = -Infinity;
 
         this._motion = new ZoomMotion(Math.log(this._settings.get_double('max-zoom')));
@@ -269,6 +272,10 @@ export default class ScrollZoomExtension extends Extension {
                 setMagFactor.call(this, xMagFactor, yMagFactor);
                 return;
             }
+            // GNOME echoes the level Scroll Zoom saved, to two decimal places. Any other
+            // level moves the pointer GNOME's way, so the next zoom starts from where it is.
+            if (Math.abs(xMagFactor - this.getMagFactor()[0]) > 0.01)
+                extension._pushAnchor = null;
             extension._syncMotion();
             extension._followPointer = false;
             extension._motion.glideTo(Math.log(xMagFactor), now());
@@ -364,6 +371,8 @@ export default class ScrollZoomExtension extends Extension {
 
     _onPointerMoved() {
         this._pointerMovedAtS = now();
+        // Where the pointer is drawn changes with it, so the next zoom starts from there.
+        this._pushAnchor = null;
         if (this._held)
             this._waitForRest(POINTER_REST_MS);
         this._queuePan();
@@ -402,8 +411,14 @@ export default class ScrollZoomExtension extends Extension {
         const [x, y, width, height] = region.getROI();
         const left = shownStart(x, width, box.x, box.width);
         const top = shownStart(y, height, box.y, box.height);
-        if (left !== x || top !== y)
+        if (left !== x || top !== y) {
             region.scrollContentsTo(left + width / 2, top + height / 2);
+            // GNOME leaves the view where it is when its middle would leave the screen. When it
+            // did move, the pointer is drawn somewhere new, so the next zoom keeps it there.
+            const [movedX, movedY] = region.getROI();
+            if (movedX !== x || movedY !== y)
+                this._pushAnchor = null;
+        }
     }
 
     // Before a new movement, pick up the current zoom, which may have been
@@ -451,16 +466,20 @@ export default class ScrollZoomExtension extends Extension {
             // setMagFactor it can skip the 100 ms ease, which would fight
             // the per-frame glide.
             if (typeof region._changeROI === 'function') {
+                const centre = this._followPointer
+                    ? this._pushCentre(factor, !Main.magnifier.isActive()) : null;
                 region._changeROI({
                     xMagFactor: factor,
                     yMagFactor: factor,
+                    ...centre,
                     // A glide the wheel or touchpad started stays on the pointer all the
                     // way. GNOME's own following lasts a second after zoom comes on, so a
                     // slow spin would otherwise settle where the view was then. A level that
                     // comes in through setMagFactor, from keyboard zoom, the Settings slider,
                     // or GNOME handing back this extension's own save, keeps GNOME's way,
-                    // which hands over to focus tracking.
-                    redoCursorTracking: this._followPointer || region._followingCursor,
+                    // which hands over to focus tracking. Under GNOME's push the centre places
+                    // the view, and GNOME's push must not move it again.
+                    redoCursorTracking: !centre && (this._followPointer || region._followingCursor),
                     animate: false,
                 });
             } else {
@@ -471,17 +490,83 @@ export default class ScrollZoomExtension extends Extension {
         }
     }
 
-    // Each time zoom comes on, by the wheel or by GNOME's toggle, centre the view on the
-    // pointer. GNOME's magnifier skips that when the pointer has not moved since zoom was
-    // last on, so the view would come on around wherever it was then.
+    // Each time zoom comes on, by the wheel or by GNOME's toggle, place the view for the
+    // pointer: under push, so the pointer stays where it is drawn, and otherwise as GNOME's
+    // following places it. GNOME's magnifier skips that when the pointer has not moved since
+    // zoom was last on, so the view would come on around wherever it was then.
     // When Super+Alt+8 or Settings turned zoom on or off, also stop any glide.
     _onActiveChanged(active) {
-        if (active)
-            this._region.scrollToMousePos();
+        if (active) {
+            const centre = this._pushCentre(this._region.getMagFactor()[0], true);
+            if (centre)
+                this._region._changeROI(centre);
+            else
+                this._region.scrollToMousePos();
+        }
         if (this._settingActive)
             return;
         this._timeline.stop();
         this._motion.reset(active ? Math.log(this._region.getMagFactor()[0]) : 0, now());
+    }
+
+    // Under GNOME's push, zooming keeps the pointer where it is drawn, so neither it nor what
+    // is under it jumps. GNOME's own push zooms around the view's middle and then pushes the
+    // pointer back into view, toward an edge. The pointer stays where it was drawn when it was
+    // last put there, by moving, as zoom came on, as following focus or the text cursor moved
+    // the view, or as GNOME set a level or zoomed under its other following, as near as keeps
+    // the whole of its image, which GNOME's push holds in the view, within the view, so the
+    // view stays still as the pointer then moves. That place is kept until one of those, not
+    // until a glide ends, so where the pointer is drawn depends only on it and the zoom, and a
+    // zoom that goes in deep and turns back brings the pointer back however it got there. The
+    // view is GNOME's, on the whole screen or half of it, and what it shows stays within the
+    // screen, unless GNOME's Extend Outside Screen Edges lets it past as far as its push or
+    // Scroll Zoom's following takes it. `fromOff` is for zoom coming on, when the pointer is
+    // drawn where it is. Under GNOME's other following, no centre.
+    _pushCentre(factor, fromOff) {
+        const region = this._region;
+        // A zoom under GNOME's other following moves the view under the pointer, so push
+        // starts again from where the pointer is drawn then.
+        if (this._magSettings.get_enum('mouse-tracking') !== MOUSE_PUSH) {
+            this._pushAnchor = null;
+            return null;
+        }
+        if (typeof region._changeROI !== 'function' || !region._mouseSourceActor)
+            return null;
+        const pointer = global.get_pointer();
+        const view = [region._viewPortX, region._viewPortY,
+            region._viewPortWidth, region._viewPortHeight];
+        const image = region._mouseSourceActor.get_size();
+        const screen = [global.screen_width, global.screen_height];
+        if (fromOff || !this._pushAnchor) {
+            const roi = region.getROI();
+            const was = region.getMagFactor()[0];
+            // Where the pointer is drawn, and how far past the screen's edges the view is:
+            // GNOME's push takes it past the right and bottom as far as shows the pointer's
+            // image, and following past any edge, as far as what it shows is past it.
+            this._pushAnchor = [0, 1].map(axis => fromOff
+                ? {place: pointer[axis], before: 0, past: 0}
+                : {
+                    place: view[axis] + (pointer[axis] - roi[axis]) * was,
+                    before: Math.max(-roi[axis], 0),
+                    past: Math.max(roi[axis] + roi[axis + 2] - screen[axis], 0),
+                });
+        }
+        const [xCenter, yCenter] = [0, 1].map(axis => {
+            const [origin, size] = [view[axis], view[axis + 2]];
+            const {place, before, past: pastThen} = this._pushAnchor[axis];
+            const kept = Math.min(Math.max(place, origin), origin + size - image[axis] * factor);
+            // GNOME's Extend Outside Screen Edges lets the view past the screen's edges, as
+            // far as it was when the pointer was put where it is, or as GNOME's push takes it
+            // past the right and bottom to show the pointer's whole image now.
+            const clamped = region._clampScrollingAtEdges;
+            const low = clamped ? 0 : before;
+            const past = clamped
+                ? 0 : Math.max(pointer[axis] + image[axis] - screen[axis], pastThen, 0);
+            const start = Math.min(Math.max(pointer[axis] - (kept - origin) / factor, -low),
+                screen[axis] - size / factor + past);
+            return start + size / factor / 2;
+        });
+        return {xCenter, yCenter};
     }
 
     _turnOff() {
