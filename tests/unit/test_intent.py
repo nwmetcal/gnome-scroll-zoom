@@ -62,25 +62,69 @@ def test_a_release_tag_named_in_a_command_must_be_version_name() -> None:
     ]
 
 
-def test_a_tag_in_inline_code_is_held_too() -> None:
-    assert tag_problems("Then run `gh release view v1.2.0`.", "1.1.0") != []
+def test_a_release_command_is_read_wherever_it_stands() -> None:
+    for body in (
+        "Then run `gh release create v1.2.0 build/scroll-zoom.shell-extension.zip`.",
+        "1. Tag it:\n\n   ```bash\n   git tag -a v1.0.0 -m Release\n   ```\n",
+        "> [!IMPORTANT]\n> ```bash\n> git tag v1.0.0 && git push origin v1.0.0\n> ```\n",
+        "```bash\ngit tag v1.0.0\n",
+        "````\n```\ngit push origin refs/tags/v1.0.0\n```\n````\n",
+        "then tag it with git tag v1.0.0 and push it.",
+    ):
+        assert tag_problems(body, "1.1.0") != [], body
+
+
+def test_a_command_in_a_span_wrapped_across_lines_is_read_on() -> None:
+    assert tag_problems("- tag it, `git tag\n  v1.0.0`, then push", "1.1.0") != []
+    assert tag_problems("`git tag v1.1.0 && git push origin\n  v1.0.0`", "1.1.0") != []
+    assert tag_problems("> `git push origin main\n> v1.0.0`", "1.1.0") != []
+    assert tag_problems("``git tag\nv1.0.0``", "1.1.0") != []
+
+
+def test_a_command_outside_a_span_ends_with_its_line() -> None:
+    assert tag_problems("Use git tag to mark it.\nSince v1.0.0 it glides.", "1.1.0") == []
+    assert tag_problems("```\ngit tag v1.1.0\nv1.0.0 was last\n```", "1.1.0") == []
+    assert tag_problems("`git push origin\n\nv1.0.0` is a new paragraph", "1.1.0") == []
+
+
+def test_a_tag_with_any_suffix_is_not_version_name_s() -> None:
+    for tag in ("v1.1.0-rc1", "v1.1.0+1", "v1.1.0_rc1", "v1.1.0.1"):
+        assert tag_problems(f"`git tag {tag}`", "1.1.0") == [
+            f"names the tag {tag}, but version-name is 1.1.0: "
+            "the release workflow takes only v1.1.0"
+        ]
 
 
 def test_the_tag_version_name_gives_passes() -> None:
-    assert tag_problems("```\ngit tag v1.1.0 && git push origin v1.1.0\n```", "1.1.0") == []
+    body = "```\ngit tag -a v1.1.0 -m 'Scroll Zoom v1.1.0' && git push origin v1.1.0\n```"
+    assert tag_problems(body, "1.1.0") == []
+    assert tag_problems("`git tag v1.1.0`, then `make zip`.", "1.1.0") == []
 
 
-def test_a_tag_in_a_list_item_s_fenced_block_is_held_too() -> None:
-    body = "1. Tag it:\n\n   ```bash\n   git tag v1.0.0\n   ```\n2. Push it.\n"
-    assert tag_problems(body, "1.1.0") != []
+def test_a_tag_named_through_a_variable_passes() -> None:
+    assert tag_problems('```\ngit tag "v$version" origin/main\n```', "1.1.0") == []
 
 
-def test_a_tag_with_a_suffix_is_not_version_name_s() -> None:
-    assert tag_problems("`git tag v1.1.0-rc1`", "1.1.0") != []
+def test_an_older_version_outside_a_release_command_passes() -> None:
+    for body in (
+        "Since v1.0.0 zoom glides, and `make zip` builds it.",
+        "`git log --oneline v1.0.0..origin/main`",
+        "```yaml\n- uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n```",
+        "```\nthe tag v1.0.0 does not match version-name 1.1.0\n```",
+        "`git tag v1.1.0\n  `, while v1.0.0 stays as it was, and `make zip`",
+    ):
+        assert tag_problems(body, "1.1.0") == [], body
 
 
-def test_a_version_in_prose_is_not_a_command() -> None:
-    assert tag_problems("Since v1.0.0 zoom glides, and `make zip` builds it.", "1.1.0") == []
+def test_a_command_that_deletes_lists_or_verifies_a_tag_passes() -> None:
+    for command in (
+        "git tag -d v1.0.0-rc1",
+        "git push --delete origin v1.0.0-rc1",
+        "git push origin :refs/tags/v1.0.0-rc1",
+        "git tag --list v1.0.0",
+        "git tag -v v1.0.0",
+    ):
+        assert tag_problems(f"`{command}`", "1.1.0") == [], command
 
 
 def test_the_extension_s_version_name_is_read() -> None:
