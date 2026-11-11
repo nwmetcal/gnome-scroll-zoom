@@ -411,8 +411,11 @@ export default class ScrollZoomExtension extends Extension {
         const [x, y, width, height] = region.getROI();
         const left = shownStart(x, width, box.x, box.width);
         const top = shownStart(y, height, box.y, box.height);
-        if (left !== x || top !== y)
+        if (left !== x || top !== y) {
             region.scrollContentsTo(left + width / 2, top + height / 2);
+            // The pointer is drawn somewhere new, so the next zoom keeps it there.
+            this._pushAnchor = null;
+        }
     }
 
     // Before a new movement, pick up the current zoom, which may have been
@@ -506,14 +509,15 @@ export default class ScrollZoomExtension extends Extension {
     // Under GNOME's push, zooming keeps the pointer where it is drawn, so neither it nor what
     // is under it jumps. GNOME's own push zooms around the view's middle and then pushes the
     // pointer back into view, toward an edge. The pointer stays where it was drawn when it
-    // was last put there, by moving or as zoom came on, as near as keeps the whole of its
-    // image, which GNOME's push holds in the view, within the view, so the view stays still
-    // as the pointer then moves. That place is kept until the pointer moves, not until a
-    // glide ends, so where the pointer is drawn depends only on it and the zoom, and a zoom
-    // that goes in deep and turns back brings the pointer back however it got there. The view
-    // is GNOME's, on the whole screen or half of it, and what it shows stays within the
-    // screen. `fromOff` is for zoom coming on, when the pointer is drawn where it is. Under
-    // GNOME's other following, no centre.
+    // was last put there, by moving, as zoom came on, or as following focus or the text
+    // cursor moved the view, as near as keeps the whole of its image, which GNOME's push
+    // holds in the view, within the view, so the view stays still as the pointer then moves.
+    // That place is kept until one of those, not until a glide ends, so where the pointer is
+    // drawn depends only on it and the zoom, and a zoom that goes in deep and turns back
+    // brings the pointer back however it got there. The view is GNOME's, on the whole screen
+    // or half of it, and what it shows stays within the screen, unless GNOME's Extend Outside
+    // Screen Edges lets it past as far as its push takes it. `fromOff` is for zoom coming on,
+    // when the pointer is drawn where it is. Under GNOME's other following, no centre.
     _pushCentre(factor, fromOff) {
         const region = this._region;
         if (this._magSettings.get_enum('mouse-tracking') !== MOUSE_PUSH ||
@@ -522,22 +526,30 @@ export default class ScrollZoomExtension extends Extension {
         const pointer = global.get_pointer();
         const view = [region._viewPortX, region._viewPortY,
             region._viewPortWidth, region._viewPortHeight];
+        const image = region._mouseSourceActor.get_size();
+        const screen = [global.screen_width, global.screen_height];
         if (fromOff || !this._pushAnchor) {
             const roi = region.getROI();
             const was = region.getMagFactor()[0];
+            // Where the pointer is drawn, and how far past the screen's right and bottom
+            // edges GNOME's push has left the view, which is as far as shows its image.
             this._pushAnchor = [0, 1].map(axis => fromOff
-                ? pointer[axis] : view[axis] + (pointer[axis] - roi[axis]) * was);
+                ? {place: pointer[axis], past: 0}
+                : {
+                    place: view[axis] + (pointer[axis] - roi[axis]) * was,
+                    past: Math.min(Math.max(roi[axis] + roi[axis + 2] - screen[axis], 0),
+                        image[axis]),
+                });
         }
-        const image = region._mouseSourceActor.get_size();
-        const screen = [global.screen_width, global.screen_height];
         const [xCenter, yCenter] = [0, 1].map(axis => {
             const [origin, size] = [view[axis], view[axis + 2]];
-            const kept = Math.min(Math.max(this._pushAnchor[axis], origin),
-                origin + size - image[axis] * factor);
+            const {place, past: pastThen} = this._pushAnchor[axis];
+            const kept = Math.min(Math.max(place, origin), origin + size - image[axis] * factor);
             // GNOME's Extend Outside Screen Edges lets the view past the right and bottom
-            // edges, as far as GNOME's push takes it to show the pointer's whole image.
+            // edges, as far as GNOME's push takes it to show the pointer's whole image, now or
+            // when the pointer was put where it is.
             const past = region._clampScrollingAtEdges
-                ? 0 : Math.max(pointer[axis] + image[axis] - screen[axis], 0);
+                ? 0 : Math.max(pointer[axis] + image[axis] - screen[axis], pastThen, 0);
             const start = Math.min(Math.max(pointer[axis] - (kept - origin) / factor, 0),
                 screen[axis] - size / factor + past);
             return start + size / factor / 2;
