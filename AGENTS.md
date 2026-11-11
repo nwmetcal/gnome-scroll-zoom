@@ -16,7 +16,7 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
 - `make format` rewrites the Python, which ruff owns.
 - `make check-commits` checks the commit messages from `origin/main` to the branch's head.
 - `make check-intent BODY=<file>` checks a description's Intent section against the branch,
-  and that each tag its release commands name is `v` and `version-name` in `metadata.json`.
+  and that each tag its release commands make is `v` and `version-name` in `metadata.json`.
 - `make pr-fetch PR=<n>` saves a pull request's description to `build/pr/body.md`.
   `make loop-brief` prints what a reviewer is given for it, and
   `make check-review REVIEW=<file>` checks a review's form before it is posted.
@@ -156,7 +156,7 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | A step crops only boxes wholly on its screenshot, so it never judges an empty crop | `crop` in `tests/images.py`, held by `tests/unit/test_images.py` |
 | The `@shell` scenarios pass with test shells side by side, as a review round runs them | the `deliver` skill's Prove step: two `make test-shell` runs at once when the extension, the test shell, its harness, or a `@shell` step changes |
 | Every image in the README and the project page has alt text | `tests/style/test_pages.py` |
-| A release's tag matches the extension's `version-name`, as does each tag a description's `git tag`, `git push`, or `gh release create` names | the `release` workflow; `make check-intent`, in the `intent` workflow |
+| A release's tag matches the extension's `version-name`, as does each tag a description's `git tag`, `git push`, or `gh release create` makes or publishes | the `release` workflow; `make check-intent`, in the `intent` workflow |
 | The pages work for low vision: animation once with a still, reflow at 400%, nothing by color alone | review: the rules lens |
 | A shell script passes shellcheck | `tests/style/test_shell.py` |
 | No `Any`; a function's types are complete | ruff (`ANN`, `TID251`) and pyright strict, in `make check` |
