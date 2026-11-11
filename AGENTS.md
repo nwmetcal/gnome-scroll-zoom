@@ -11,8 +11,8 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
   the traceability matrix to `build/traceability.md`. Nothing merges without it green.
 - `make test-shell` runs `make check`'s tests and the `@shell` scenarios too, in a private
   headless GNOME Shell that `dev/test-shell.sh` starts (decision 0005). It needs a GNOME Shell
-  whose major `metadata.json` lists, today GNOME Shell 50, and a GPU render node. Run it before pushing
-  any change to the extension, and say in the pull request that it passed, and on which.
+  whose major `metadata.json` lists, today GNOME Shell 50, and a GPU render node. Run it before
+  pushing any change to the extension, and say in the pull request that it passed, and on which.
 - `make format` rewrites the Python, which ruff owns.
 - `make check-commits` checks the commit messages from `origin/main` to the branch's head.
 - `make check-intent BODY=<file>` checks a description's Intent section against the branch.
@@ -89,6 +89,8 @@ they are is in `docs/decisions/` and `docs/explanation/the-loop.md`.
   semicolons, `const` by default.
 - Python 3.12 or later, ruff format and lint, pyright strict, line length 100. Type hints
   everywhere. No `Any`.
+- Markdown prose keeps to 100 characters a line too: tables, code blocks, images, and links'
+  targets aside, and the pull request template, whose lines a description takes whole.
 - Errors propagate with their cause. No blanket `catch` or `except`, no silent default.
 - A number whose unit is not obvious carries it in its name: `delay_ms`, `rate_hz`.
 - Comments say why, never what.
@@ -144,6 +146,7 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | Nothing reaches `main` but a merged pull request; no force push; no bypassed hook | the pre-push hook; the agent settings in `.claude/settings.json` |
 | Every `make` target this file names exists, and the code map names every folder | `tests/style/test_agents_md.py` |
 | No words that sell, no tool or model names, no emoji | `tests/style/test_words.py` |
+| Markdown prose keeps to 100 characters a line, tables, code, images, and links' targets aside | `tests/style/test_prose.py` |
 | No tracked file over 1 MB | `tests/style/test_sizes.py` |
 | The bundle holds only what the extension loads, metadata and a schema the site takes, and each process's own libraries; every signal, main loop source, and keybinding is undone, as gjs's own parser reads the code, and a name that makes one anywhere but in a call the check reads fails it, as do `eval`, `Function`, a function's `constructor`, and `import()`, which run code from a string or load a module while the extension runs | `tests/style/test_bundle.py`, reading through `tests/style/js_nodes.js` |
 | `shell-version` lists only whole majors released by the date, counted as the site's analyzer counts them, and the test shell runs only on one it lists | `tests/style/test_bundle.py`; `gnome_shell_refusal` in `tests/shell.py` |
