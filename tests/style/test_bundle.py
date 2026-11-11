@@ -3,6 +3,7 @@
 its guidelines a file check can see: https://gjs.guide/extensions/review-guidelines/."""
 
 import json
+import posixpath
 import re
 import subprocess
 import tempfile
@@ -166,7 +167,9 @@ def loaded(entry: str, source: Callable[[str], str] = extension_file) -> list[st
         if name in seen:
             continue
         seen.append(name)
-        pending += [path[2:] for _, path in whole(source(name)).imports if path.startswith("./")]
+        folder = posixpath.dirname(name)
+        imports = [path for _, path in whole(source(name)).imports if path.startswith("./")]
+        pending += [posixpath.normpath(posixpath.join(folder, path)) for path in imports]
     return seen
 
 
@@ -195,7 +198,9 @@ def deprecated(text: str) -> list[str]:
     """Each of the older importer's modules the guidelines refuse that a module reaches, and
     each run_dispose() it calls, as gjs's parser reads them."""
     read = whole(text)
-    paths = sorted({path for _, path in read.imports} & DEPRECATED)
+    paths = sorted(
+        {m for _, path in read.imports for m in DEPRECATED if path == m or path.startswith(f"{m}.")}
+    )
     called = [f"line {c.line}: {DISPOSE}()" for c in read.calls if c.name == DISPOSE]
     return paths + called
 

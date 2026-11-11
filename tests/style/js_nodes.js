@@ -210,27 +210,40 @@ function importsOf(ast) {
     const found = [];
     const aliases = new Map();
     const nameOf = (node, computed) => {
+        if (node?.type === 'ComputedName')
+            return nameOf(node.name, false);
         if (node?.type === 'Identifier' && !computed)
             return node.name;
         return node?.type === 'Literal' && typeof node.value === 'string' ? node.value : null;
     };
-    // The older importer's path a node stands for, as imports.gi.Gtk, or null.
+    // A path is followed through every name and member that can hold it, since the older
+    // importer loads a module wherever a path to it is read.
     function importer(node) {
+        if (node?.type === 'OptionalExpression')
+            return importer(node.expression);
         if (node?.type === 'Identifier')
             return node.name === 'imports' ? 'imports' : aliases.get(node.name) ?? null;
         if (!node || !isMember(node))
             return null;
-        const object = importer(node.object);
         const name = nameOf(node.property, node.computed);
+        if (node.object.type === 'Identifier' && node.object.name === 'globalThis' &&
+            name === 'imports')
+            return 'imports';
+        const object = importer(node.object);
         return object === null || name === null ? null : `${object}.${name}`;
     }
-    // A name or a pattern given part of a path, as const {Gtk, gi: {Gdk}} = imports.
+    // Each level of a pattern is recorded, so a module taken apart, as const {mainloop: {x}} =
+    // imports, is reached as itself and not only as what is taken out of it.
     function bind(target, base, line, record) {
-        if (target?.type === 'Identifier') {
+        if (target?.type === 'AssignmentExpression') {
+            bind(target.left, base, line, record);
+        } else if (target?.type === 'Identifier') {
             aliases.set(target.name, base);
             if (record)
                 found.push([line, base]);
         } else if (target?.type === 'ObjectPattern') {
+            if (record)
+                found.push([line, base]);
             for (const property of target.properties) {
                 const key = nameOf(property.key, property.computed);
                 if (key !== null)
@@ -244,6 +257,9 @@ function importsOf(ast) {
         if (record && ['ImportDeclaration', 'ExportDeclaration'].includes(node.type) &&
             typeof source === 'string')
             found.push([line, source]);
+        const loads = node.type === 'CallImport' ? node.arguments?.[0] : null;
+        if (record && loads?.type === 'Literal' && typeof loads.value === 'string')
+            found.push([line, loads.value]);
         if (node.type === 'VariableDeclarator' && importer(node.init) !== null)
             bind(node.id, importer(node.init), line, record);
         if (node.type === 'AssignmentExpression' && importer(node.right) !== null)
@@ -253,9 +269,22 @@ function importsOf(ast) {
         for (const [, child] of children(node))
             walk(child, record);
     }
-    // Names first, twice so a name given another name's path is known, then the paths.
-    walk(ast, false);
-    walk(ast, false);
+    // Names first, again until none changes, so a chain of names given in any order is known,
+    // then the paths. A name given a path built from itself, as a = a.gi, grows each time, so
+    // the passes stop at one more than the places a name can be given a path.
+    let sites = 0;
+    (function count(node) {
+        sites += ['VariableDeclarator', 'AssignmentExpression'].includes(node.type) ? 1 : 0;
+        for (const [, child] of children(node))
+            count(child);
+    })(ast);
+    for (let pass = 0, before = null; pass <= sites; pass++) {
+        walk(ast, false);
+        const now = JSON.stringify([...aliases]);
+        if (now === before)
+            break;
+        before = now;
+    }
     walk(ast, true);
     return found;
 }
