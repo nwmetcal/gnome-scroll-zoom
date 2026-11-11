@@ -19,8 +19,10 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
   did, or as near to it as keeps its whole image on the screen and the view within the screen:
   no further right than the screen's width less 24 pixels times the zoom, no further down than
   its height less the same, and, as zoom goes back toward 1x and the view grows to fill the
-  screen, back toward where the pointer itself is. Past 6.25x the pointer at 1100, 650 has less
-  room than that below it, and past 7.5x to its right. Kept so, the view stays still as the
+  screen, back toward where the pointer itself is. GNOME does not move its view where the view's
+  middle would leave the screen, so following a control further off than that leaves the view
+  where it is, and the pointer's kept place with it. Past 6.25x the pointer at 1100, 650 has
+  less room than that below it, and past 7.5x to its right. Kept so, the view stays still as the
   pointer then moves within it, and where the pointer is drawn depends only on where it was put
   and the zoom, however the zoom got there. A later zoom without a move, and a spin that zooms
   in deep and turns back, bring the pointer back as the room comes back, even past the maximum
@@ -47,14 +49,12 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
   any edge to show what it follows with room around it, even a control on a window partly off
   the screen. Following leaves 24 pixels of room around what it shows, so for a control wholly
   on the screen it takes the view no more than 24 pixels past an edge, and a scenario that wants
-  it further puts the control past the edge. GNOME does not move its view where the view's
-  middle would leave the screen, so following a control further off than that leaves the view
-  where it is, and the pointer's kept place with it. It may also go past the right and bottom
-  edges as far as the pointer's whole image needs now, and no further. So as zoom goes back
-  toward 1x the view still grows back to fill the screen but for that, and zoom going off moves
-  the pointer by up to that much more than zoom going off from 1.01x moves it anyway, as GNOME's
-  own toggle does with its view past the edge. How far the view is past an edge is in the
-  screen's own pixels, as at 1x.
+  it further puts the control past the edge. It may also go past the right and bottom edges as
+  far as the pointer's whole image needs now, and no further. So as zoom goes back toward 1x the
+  view still grows back to fill the screen but for that, and zoom going off moves the pointer by
+  up to that much more than zoom going off from 1.01x moves it anyway, as GNOME's own toggle
+  does with its view past the edge. How far the view is past an edge is in the screen's own
+  pixels, as at 1x.
 
   GNOME can show its zoomed view on half the screen instead (Magnifier View > Screen Area).
   There the view is that half: the pointer is drawn from the half's own corner, at its place in
