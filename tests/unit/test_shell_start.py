@@ -38,6 +38,31 @@ def silent_gnome_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     stand_in_gnome_shell(tmp_path, monkeypatch, "exec sleep 120")
 
 
+# Takes GNOME Shell's name on the bus and offers its Eval on a main loop it never runs, so a
+# call to it waits, as one to a shell that froze while starting does.
+FROZEN = """
+const {Gio, GLib} = imports.gi;
+const bus = Gio.bus_get_sync(Gio.BusType.SESSION, null);
+const xml = '<node><interface name="org.gnome.Shell"><method name="Eval"><arg type="s" ' +
+    'direction="in"/><arg type="b" direction="out"/><arg type="s" direction="out"/></method>' +
+    '</interface></node>';
+Gio.DBusExportedObject.wrapJSObject(xml, {Eval: () => [true, '']}).export(bus, '/org/gnome/Shell');
+bus.call_sync('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus',
+    'RequestName', new GLib.Variant('(su)', ['org.gnome.Shell', 0]), null, 0, -1, null);
+GLib.usleep(120 * 1000000);
+"""
+
+
+@pytest.fixture
+def frozen_gnome_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stand-in gnome-shell that holds GNOME Shell's name on the bus and never answers."""
+    if shutil.which("gjs") is None:
+        pytest.skip("the frozen stand-in runs in gjs")
+    script = tmp_path / "frozen.js"
+    script.write_text(FROZEN)
+    stand_in_gnome_shell(tmp_path, monkeypatch, f"exec gjs {script}")
+
+
 @pytest.mark.usefixtures("failing_gnome_shell")
 def test_a_shell_that_fails_to_start_says_why() -> None:
     shell = Shell(new_root())
@@ -59,7 +84,8 @@ def test_a_stopped_shell_keeps_its_log() -> None:
 
 
 @pytest.mark.usefixtures("failing_gnome_shell")
-def test_a_shell_that_exits_is_given_up_on_at_once() -> None:
+def test_a_shell_that_exits_is_given_up_on_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TEST_SHELL_START_S", raising=False)
     shell = Shell(new_root())
     began = time.monotonic()
     try:
@@ -87,6 +113,7 @@ def test_a_shell_that_never_comes_up_says_why_at_the_script_s_wait(
 
 @pytest.mark.usefixtures("silent_gnome_shell")
 def test_a_shell_that_outlasts_the_run_s_wait_says_why(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TEST_SHELL_START_S", raising=False)
     monkeypatch.setattr("tests.shell.START_TIMEOUT_S", 2)
     shell = Shell(new_root())
     try:
@@ -95,3 +122,20 @@ def test_a_shell_that_outlasts_the_run_s_wait_says_why(monkeypatch: pytest.Monke
     finally:
         log = shell.stop()
     assert CAUSE in log.read_text()
+
+
+@pytest.mark.usefixtures("frozen_gnome_shell")
+def test_a_shell_that_holds_its_name_and_never_answers_is_given_up_on_in_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TEST_SHELL_START_S", "2")
+    monkeypatch.setattr("tests.shell.START_TIMEOUT_S", 20)
+    shell = Shell(new_root())
+    began = time.monotonic()
+    try:
+        with pytest.raises(ShellError, match="did not come up(?s:.*)FAKE-CAUSE"):
+            shell.start()
+    finally:
+        shell.stop()
+    took_s = time.monotonic() - began
+    assert took_s < SOON_S, f"a shell that never answered took {took_s:.1f} s to be given up on"

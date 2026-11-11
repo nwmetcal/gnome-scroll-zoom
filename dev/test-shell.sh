@@ -16,8 +16,8 @@
 #   dev/test-shell.sh log             show the shell's log
 #   dev/test-shell.sh stop
 #
-# TEST_SHELL_ROOT gives each test shell a root of its own; TEST_SHELL_START_S, how many seconds
-# start waits for it to come up, 30 unless set.
+# TEST_SHELL_ROOT gives each test shell a root of its own; TEST_SHELL_START_S, how many whole
+# seconds start waits for it to come up, 30 unless set.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -110,9 +110,12 @@ EOF
     chmod +x "$ROOT/launch.sh"
     test_env setsid dbus-run-session -- "$ROOT/launch.sh" > "$ROOT/shell.log" 2>&1 &
 
-    # TEST_SHELL_START_S shortens the wait, so a test can reach the end of it.
-    for _ in $(seq $((${TEST_SHELL_START_S:-30} * 5))); do
-        if [[ -s "$ROOT/bus" ]] && shell_call --object-path /org/gnome/Shell \
+    # TEST_SHELL_START_S shortens the wait, so a test can reach the end of it. The wait is
+    # counted in seconds, not tries, and each try waits a second at most for an answer, so a
+    # shell that has taken its name and froze is given up on in time too.
+    local deadline=$((SECONDS + ${TEST_SHELL_START_S:-30}))
+    while ((SECONDS < deadline)); do
+        if [[ -s "$ROOT/bus" ]] && shell_call --timeout 1 --object-path /org/gnome/Shell \
             --method org.gnome.Shell.Eval 'Main.layoutManager._startingUp === false' 2>/dev/null |
             grep -q "true, 'true'"; then
             # Leave the overview the shell opens at startup.
