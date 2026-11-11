@@ -30,6 +30,8 @@ VIEW_PORTS = {
 # of it, grown by the zoom, in the view.
 POINTER_IMAGE_PX = 24
 SWIPE_STEP_PX = 10
+# How long following takes to try for a focus change once the pointer has rested, in seconds.
+FOLLOW_TRIED_S = 1.5
 POINTER_STEP_PX = 10
 # About one frame at the test screen's 144 Hz, as a hand moves a mouse.
 POINTER_STEP_MS = 7
@@ -230,11 +232,24 @@ def focus_app_printing(shell: Shell, request: pytest.FixtureRequest) -> None:
     )
 )
 def app_window_past_left(shell: Shell, request: pytest.FixtureRequest, pixels: int) -> None:
+    open_in_window_at(shell, request, -pixels, 200)
+
+
+@given(
+    parsers.parse(
+        "the focus test app is open in a window at {x:d}, {y:d}, past the screen's right edge"
+    )
+)
+def app_window_past_right(shell: Shell, request: pytest.FixtureRequest, x: int, y: int) -> None:
+    open_in_window_at(shell, request, x, y)
+
+
+def open_in_window_at(shell: Shell, request: pytest.FixtureRequest, x: int, y: int) -> None:
     open_for_scenario(shell, request, "--window")
     # A window a person has dragged partly off the screen, as Mutter lets them.
     window = "global.display.focus_window"
-    shell.call(f"{window}.move_frame(true, {-pixels}, 200); return true;")
-    shell.wait_until(f"{window}.get_frame_rect().x === {-pixels}")
+    shell.call(f"{window}.move_frame(true, {x}, {y}); return true;")
+    shell.wait_until(f"{window}.get_frame_rect().x === {x}")
 
 
 def open_for_scenario(shell: Shell, request: pytest.FixtureRequest, *args: str) -> None:
@@ -272,6 +287,19 @@ def shift_tab_and_follow(shell: Shell, drawn: Drawn) -> None:
     keys = [step(1, "press", "shift"), step(1, "press", "tab")]
     keys += [step(20, "release", "tab"), step(20, "release", "shift")]
     focus_and_follow(shell, drawn, keys)
+
+
+@when("Shift+Tab moves keyboard focus back to the first button, where GNOME's view cannot go")
+def shift_tab_unfollowed(shell: Shell) -> None:
+    view = "Main.magnifier.getZoomRegions()[0].getROI().join()"
+    before = shell.call(f"return {view};")
+    keys = [step(1, "press", "shift"), step(1, "press", "tab")]
+    shell.run_steps([*keys, step(20, "release", "tab"), step(20, "release", "shift")])
+    # Long enough for following to have tried, the pointer having rested its second.
+    time.sleep(FOLLOW_TRIED_S)
+    shell.settle()
+    after = shell.call(f"return {view};")
+    assert after == before, f"the view moved, from {before} to {after}"
 
 
 def focus_and_follow(shell: Shell, drawn: Drawn, keys: list[list[Json]]) -> None:
@@ -586,3 +614,10 @@ def view_past_left_and_top(shell: Shell) -> None:
 def view_far_past_left(shell: Shell, pixels: int) -> None:
     left, _, _, _ = view_box(state(shell))
     assert left < -pixels, f"the view starts {-left:.1f} pixels past the screen's left edge"
+
+
+@then(parsers.parse("the view is past the screen's right edge by more than {pixels:d} pixels"))
+def view_far_past_right(shell: Shell, pixels: int) -> None:
+    left, _, width, _ = view_box(state(shell))
+    beyond = left + width - SCREEN[0]
+    assert beyond > pixels, f"the view ends {beyond:.1f} pixels past the screen's right edge"

@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// A full-screen app for SZ-009 and SZ-010: a button at the top left, where the zoomed view
-// starts, a button near the middle of the screen, and a line of text below it, both out of that
-// view at 3x. Tab moves keyboard focus from the first button to the second. With --print the
-// line takes focus and the app moves its text cursor on its own every 250 ms, as a terminal does
-// as it prints. With --big the middle button and the line give way to a text area bigger than
-// the view at 3x, as a terminal or an editor is, which Tab moves focus into from the first
-// button. With --corner the first button sits in the screen's top-left corner instead, as a
-// window's header bar buttons do, so following it takes the view past the screen's edges when
-// GNOME lets the view go past them. With --window the app is a 640 by 420 window, not full
-// screen, with its first button in its own top-left corner and the middle button inside it and
-// focused, so a window moved partly off the screen puts the first button past the screen's edge.
+// An app for SZ-009 and SZ-010, full screen unless --window says otherwise: a button at the top
+// left, where the zoomed view starts, a button near the middle of the screen, and a line of text
+// below it, both out of that view at 3x. Tab moves keyboard focus from the first button to the
+// second. With --print the line takes focus and the app moves its text cursor on its own every
+// 250 ms, as a terminal does as it prints. With --big the middle button and the line give way to
+// a text area bigger than the view at 3x, as a terminal or an editor is, which Tab moves focus
+// into from the first button. With --corner the first button sits in the screen's top-left
+// corner instead, as a window's header bar buttons do, so following it takes the view past the
+// screen's edges when GNOME lets the view go past them. With --window the app is a 640 by 420
+// window, not full screen, with its first button in its own top-left corner and the middle
+// button inside it and focused, so a window moved partly off the screen puts the first button
+// past the screen's edge.
 //
 // Run inside the test shell:  dev/test-shell.sh client gjs -m tests/focus_app.js
 import Gdk from 'gi://Gdk?version=4.0';
@@ -17,7 +18,8 @@ import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk?version=4.0';
 
 export const TITLE = 'Focus test app';
-// Where things are on the screen, in pixels; the window fills it from the top-left corner.
+// Where things are in the window, in pixels; full screen, the window fills the screen from its
+// top-left corner, so these are places on the screen too.
 export const NEAR = {x: 40, y: 40, width: 120, height: 40};
 export const CORNER = {x: 4, y: 4, width: 120, height: 40};
 export const MIDDLE = {x: 700, y: 380, width: 120, height: 40};
