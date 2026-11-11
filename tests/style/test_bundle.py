@@ -483,6 +483,23 @@ def test_an_undo_counts_only_where_disable_reaches_it() -> None:
         assert any("never disconnected" in each for each in found), (source, found)
 
 
+def test_what_disable_assigns_declares_or_quotes_is_not_reached() -> None:
+    lock = "this._lockId = Main.screenShield.connect('locked', this._onLock);"
+    missed = [
+        f"class E {{ enable() {{ this._id = global.stage.connect('x', f); {lock} }} "
+        "disable() { Main.screenShield.disconnect(this._lockId); this._onLock = null; } "
+        f"_onLock = () => {{ {UNDO} }}; }}",
+        f"class E {{ enable() {{ this._id = global.stage.connect('x', f); "
+        f"this._onLock = () => {{ {UNDO} }}; }} disable() {{ this._onLock = null; }} }}",
+        f"class E {{ enable() {{ {UNDO} this._id = global.stage.connect('x', f); }} "
+        "disable() { log('enable'); } }",
+        f"class E {{ {CONNECTS} disable() {{ const stop = () => {{ {UNDO} }}; }} }}",
+    ]
+    for source in missed:
+        [found] = reached_and_undone([source])
+        assert any("never disconnected" in each for each in found), (source, found)
+
+
 def test_an_undo_disable_reaches_by_call_callback_or_name_counts() -> None:
     reached_ones = [
         f"class E {{ {CONNECTS} disable() {{ {UNDO} }} }}",
@@ -494,6 +511,8 @@ def test_an_undo_disable_reaches_by_call_callback_or_name_counts() -> None:
         f"_drop() {{ {UNDO} }} }}",
         f"class E {{ {CONNECTS} disable() {{ stop(); }} }}\nfunction stop() {{ {UNDO} }}",
         f"class E {{ {CONNECTS} disable() {{ this._stop(); }} _stop = () => {{ {UNDO} }}; }}",
+        f"class E {{ {CONNECTS} disable() {{ this['_stop'](); }} _stop() {{ {UNDO} }} }}",
+        f"class E {{ {CONNECTS} disable() {{ const stop = () => {{ {UNDO} }}; stop(); }} }}",
     ]
     for source in reached_ones:
         assert reached_and_undone([source]) == [[]], source
