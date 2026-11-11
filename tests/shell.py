@@ -193,7 +193,7 @@ class Shell:
         return value
 
     def screenshot(self, name: str) -> Path:
-        """A screenshot of the whole test screen, kept under build/shots/, in a folder of
+        """A screenshot of the whole test screen, kept in its shots folder, in a folder of
         this shell's own, so runs side by side never judge each other's captures."""
         out = self._captures() / f"{name}.png"
         out.parent.mkdir(parents=True, exist_ok=True)

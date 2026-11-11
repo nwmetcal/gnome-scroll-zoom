@@ -123,13 +123,14 @@ def test_shell(request: pytest.FixtureRequest) -> Generator[Shell]:
     if (refusal := gnome_shell_refusal()) is not None:
         pytest.fail(refusal)
     shell = Shell(new_root())
-    request.config.stash[SHELL_LOG] = shell.kept_log
+    # The live log until stop() keeps a copy, so a stop that fails still names one.
+    request.config.stash[SHELL_LOG] = shell.root / "shell.log"
     try:
         shell.start()
         yield shell
     finally:
         # Also when the start times out, so no shell is left running.
-        shell.stop()
+        request.config.stash[SHELL_LOG] = shell.stop()
 
 
 def shell_log_line(log: Path | None, failed: bool) -> str | None:
@@ -141,11 +142,15 @@ def shell_log_line(log: Path | None, failed: bool) -> str | None:
     return f"the test shell's log, where GNOME Shell writes the extension's errors: {shown}"
 
 
-def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
-    failed = bool(terminalreporter.stats.get("failed") or terminalreporter.stats.get("error"))
-    line = shell_log_line(terminalreporter.config.stash.get(SHELL_LOG, None), failed)
+def pytest_unconfigure(config: pytest.Config) -> None:
+    # After pytest's own summary and count, so the line is the run's last.
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    if not isinstance(reporter, pytest.TerminalReporter):
+        return
+    failed = bool(reporter.stats.get("failed") or reporter.stats.get("error"))
+    line = shell_log_line(config.stash.get(SHELL_LOG, None), failed)
     if line is not None:
-        terminalreporter.write_line(line)
+        reporter.write_line(line)
 
 
 @pytest.fixture
