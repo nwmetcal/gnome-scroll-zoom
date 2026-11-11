@@ -413,8 +413,11 @@ export default class ScrollZoomExtension extends Extension {
         const top = shownStart(y, height, box.y, box.height);
         if (left !== x || top !== y) {
             region.scrollContentsTo(left + width / 2, top + height / 2);
-            // The pointer is drawn somewhere new, so the next zoom keeps it there.
-            this._pushAnchor = null;
+            // GNOME leaves the view where it is when its middle would leave the screen. When it
+            // did move, the pointer is drawn somewhere new, so the next zoom keeps it there.
+            const [movedX, movedY] = region.getROI();
+            if (movedX !== x || movedY !== y)
+                this._pushAnchor = null;
         }
     }
 
@@ -508,16 +511,16 @@ export default class ScrollZoomExtension extends Extension {
 
     // Under GNOME's push, zooming keeps the pointer where it is drawn, so neither it nor what
     // is under it jumps. GNOME's own push zooms around the view's middle and then pushes the
-    // pointer back into view, toward an edge. The pointer stays where it was drawn when it
-    // was last put there, by moving, as zoom came on, or as following focus or the text
-    // cursor moved the view, as near as keeps the whole of its image, which GNOME's push
-    // holds in the view, within the view, so the view stays still as the pointer then moves.
-    // That place is kept until one of those, not until a glide ends, so where the pointer is
-    // drawn depends only on it and the zoom, and a zoom that goes in deep and turns back
-    // brings the pointer back however it got there. The view is GNOME's, on the whole screen
-    // or half of it, and what it shows stays within the screen, unless GNOME's Extend Outside
-    // Screen Edges lets it past as far as its push or Scroll Zoom's following takes it. `fromOff` is for zoom coming on,
-    // when the pointer is drawn where it is. Under GNOME's other following, no centre.
+    // pointer back into view, toward an edge. The pointer stays where it was drawn when it was
+    // last put there, by moving, as zoom came on, or as following focus or the text cursor
+    // moved the view, as near as keeps the whole of its image, which GNOME's push holds in the
+    // view, within the view, so the view stays still as the pointer then moves. That place is
+    // kept until one of those, not until a glide ends, so where the pointer is drawn depends
+    // only on it and the zoom, and a zoom that goes in deep and turns back brings the pointer
+    // back however it got there. The view is GNOME's, on the whole screen or half of it, and
+    // what it shows stays within the screen, unless GNOME's Extend Outside Screen Edges lets it
+    // past as far as its push or Scroll Zoom's following takes it. `fromOff` is for zoom coming
+    // on, when the pointer is drawn where it is. Under GNOME's other following, no centre.
     _pushCentre(factor, fromOff) {
         const region = this._region;
         if (this._magSettings.get_enum('mouse-tracking') !== MOUSE_PUSH ||
