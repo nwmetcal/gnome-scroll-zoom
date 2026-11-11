@@ -297,6 +297,23 @@ def test_the_library_check_reads_each_way_to_import() -> None:
         "function setB() { b = a; }\nfunction setA() { a = imports; }",
         "function f() { return c.Gtk.init(); }\nfunction g() { c = b; }\n"
         "function h() { b = a.gi; }\nlet a = imports, b, c;",
+        "const Gtk = window.imports.gi.Gtk;",
+        "const g = globalThis;\nconst Gtk = g.imports.gi.Gtk;",
+        "const {imports: {gi: {Gtk}}} = globalThis;",
+        "const Gtk = globalThis.globalThis.imports.gi.Gtk;",
+        "function f({Gtk} = imports.gi) { return Gtk; }",
+        "class A { m({Gtk} = imports.gi) { return Gtk; } }",
+        "const {x: {Gtk} = imports.gi} = {};",
+        "let a, b;\na = b = imports.gi;\na.Gtk.init();",
+        "let b;\nconst a = b = imports.gi;\na.Gtk.init();",
+        "let g = imports.system;\nconst use = () => g.Gtk;\ng = imports.gi;\nuse();",
+        "function b() { const gi = imports.system; return gi; }\n"
+        "function a() { return gi.Gtk.Window; }\nconst gi = imports.gi;",
+        "const {...rest} = imports.gi;\nrest.Gtk.init();",
+        "import Gtk from 'gi://Gtk/';",
+        "import Gtk from 'gi://Gtk/?version=4.0';",
+        "import Gtk from 'gi://Gtk#x';",
+        "import Gtk from 'GI://Gtk';",
         "const gi = imports.gi;\nconst Gtk = gi.Gtk;",
         "const Gtk = imports.gi['Gtk'];",
         "const Gtk = imports['gi'].Gtk;",
@@ -311,7 +328,7 @@ def test_the_library_check_reads_each_way_to_import() -> None:
     unread = "// imports.gi.Gtk\nconst s = 'gi://Gtk';\nconst t = `imports.gi.Gtk`;"
     assert libraries(unread) == set()
     assert libraries("const St = (await import('gi://St')).default;") == {"St"}
-    assert libraries("let a = imports;\na = a.gi;\na.Gtk;") <= {"Gtk", "gi"}
+    assert "Gtk" in libraries("let a = imports;\na = a.gi;\na.Gtk;")
 
 
 def test_the_deprecated_check_reads_each_way_to_reach_a_module() -> None:
@@ -325,6 +342,12 @@ def test_the_deprecated_check_reads_each_way_to_reach_a_module() -> None:
         "const {lang: {Class}} = imports;",
         "const {byteArray: {toString}} = imports;",
         "const Mainloop = globalThis.imports.mainloop;",
+        "const M = window.imports.mainloop;",
+        "const L = window.imports.lang;",
+        "const g = globalThis;\nconst M = g.imports.mainloop;",
+        "let a, b;\na = b = imports;\na.mainloop.timeout_add(1, f);",
+        "let m = imports.system;\nconst use = () => m.mainloop;\nm = imports;\nuse();",
+        "const {...rest} = imports;\nrest.mainloop.timeout_add(1, f);",
         "const C = imports.lang.Class;",
     ):
         assert deprecated(spelled), spelled
@@ -354,10 +377,16 @@ def test_loaded_follows_every_way_to_import_a_module() -> None:
     ]
     nested = {
         "extension.js": "import './lib/a.js';",
-        "lib/a.js": "import './b.js';",
+        "lib/a.js": "import './b.js';\nimport '../c.js';",
         "lib/b.js": "",
+        "c.js": "",
     }
-    assert loaded("extension.js", nested.__getitem__) == ["extension.js", "lib/a.js", "lib/b.js"]
+    assert loaded("extension.js", nested.__getitem__) == [
+        "extension.js",
+        "lib/a.js",
+        "lib/b.js",
+        "c.js",
+    ]
 
 
 @dataclass(frozen=True)
