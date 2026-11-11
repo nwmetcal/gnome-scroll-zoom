@@ -15,6 +15,9 @@
 #                                     scrollZoomTest.xDisplay() in tests/shell_harness.js)
 #   dev/test-shell.sh log             show the shell's log
 #   dev/test-shell.sh stop
+#
+# TEST_SHELL_ROOT gives each test shell a root of its own; TEST_SHELL_START_S, how many seconds
+# start waits for it to come up, 30 unless set.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -107,7 +110,8 @@ EOF
     chmod +x "$ROOT/launch.sh"
     test_env setsid dbus-run-session -- "$ROOT/launch.sh" > "$ROOT/shell.log" 2>&1 &
 
-    for _ in $(seq 150); do
+    # TEST_SHELL_START_S shortens the wait, so a test can reach the end of it.
+    for _ in $(seq $((${TEST_SHELL_START_S:-30} * 5))); do
         if [[ -s "$ROOT/bus" ]] && shell_call --object-path /org/gnome/Shell \
             --method org.gnome.Shell.Eval 'Main.layoutManager._startingUp === false' 2>/dev/null |
             grep -q "true, 'true'"; then

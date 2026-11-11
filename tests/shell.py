@@ -23,6 +23,9 @@ STILL_S = 0.8
 # The test screen refreshes as fast as the monitor this is built on, so a 60 Hz timer
 # cannot pass for following every frame.
 REFRESH_HZ = 144
+# How long a test shell may take to start before the run gives up on it: well past the 30 s
+# dev/test-shell.sh itself waits, so the script's own message, with the log, comes first.
+START_TIMEOUT_S = 90
 
 type Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -82,12 +85,12 @@ class Shell:
         command = [str(TEST_SHELL), "start", f"{width}x{height}@{REFRESH_HZ}"]
         try:
             done = subprocess.run(
-                command, env=self._env(), capture_output=True, text=True, timeout=90
+                command, env=self._env(), capture_output=True, text=True, timeout=START_TIMEOUT_S
             )
         except subprocess.TimeoutExpired as timeout:
             raise ShellError(
-                f"the test shell in {self.root} took over 90 s to start; its log ends:\n"
-                + self._log_tail()
+                f"the test shell in {self.root} took over {START_TIMEOUT_S} s to start;"
+                f" its log ends:\n{self._log_tail()}"
             ) from timeout
         if done.returncode != 0:
             raise ShellError(
