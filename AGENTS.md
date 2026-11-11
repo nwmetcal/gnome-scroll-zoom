@@ -153,6 +153,7 @@ Every change runs the loop. Its playbook is the `deliver` skill, in
 | A change to `shell-version` says in its description which GNOME Shell its `make test-shell` passed on | review: the rules lens |
 | An upload to extensions.gnome.org sends what `gnome-extensions upload` sends, and never prints the password or token | `tests/unit/test_ego.py` |
 | A step crops only boxes wholly on its screenshot, so it never judges an empty crop | `crop` in `tests/images.py`, held by `tests/unit/test_images.py` |
+| A test shell that does not start says why, and keeps its log | `tests/unit/test_shell_start.py` |
 | The `@shell` scenarios pass with test shells side by side, as a review round runs them | the `deliver` skill's Prove step: two `make test-shell` runs at once when the extension, the test shell, its harness, or a `@shell` step changes |
 | Every image in the README and the project page has alt text | `tests/style/test_pages.py` |
 | A release's tag matches the extension's `version-name` | the `release` workflow |
