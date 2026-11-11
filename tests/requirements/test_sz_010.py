@@ -426,6 +426,7 @@ def pointer_kept(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> No
     assert scene.frames, "no frame was drawn as zoom changed"
     frames = [*scene.frames, state(shell)]
     worst = 0.0
+    bx, by = drawn.before
     for frame in frames:
         assert point(frame["pointer"]) == drawn.pointer, (
             f"the pointer itself moved, to {frame['pointer']}, from {drawn.pointer}"
@@ -442,8 +443,9 @@ def pointer_kept(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> No
             )
         else:
             kx, ky = drawn.pointer
+            # With zoom off the pointer is drawn where it is, so zoom coming on puts it there.
+            drawn.before, drawn.past = drawn.pointer, (0.0, 0.0)
         worst = max(worst, abs(x - kx), abs(y - ky))
-    bx, by = drawn.before
     assert worst <= tolerance, (
         f"the pointer was drawn {worst:.1f} pixels from where it was kept from {bx:.0f}, "
         f"{by:.0f}, over {len(scene.frames)} frames and where it rests at the end"

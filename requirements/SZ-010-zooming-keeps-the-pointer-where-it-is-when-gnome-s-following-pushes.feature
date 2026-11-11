@@ -253,6 +253,42 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
     And Super is held and the wheel turns 1 notch up
     Then every frame kept the pointer where it was on the screen, within 2 pixels
 
+  Scenario: Zoom coming on again by the wheel, with no move since it went off, keeps the pointer
+    Given GNOME's own following pushes the view at its edges
+    And zoom is off
+    And the pointer is at 1100, 650
+    When Super is held and the wheel turns 6 notches up
+    And the pointer moves 100 pixels left
+    And Super is held and the wheel turns 12 notches down
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+    And zoom is off
+    When Super is held and the wheel turns 6 notches up
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: GNOME's toggle turning zoom on again, with no move since it went off, keeps it
+    Given GNOME's own following pushes the view at its edges
+    And zoom is off
+    And the pointer is at 1100, 650
+    When Super is held and the wheel turns 6 notches up
+    And the pointer moves 100 pixels left
+    And Super is held and the wheel turns 12 notches down
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+    And zoom is off
+    When GNOME's zoom toggle turns zoom on
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: With GNOME's view let past the edges, zooming out after a push at the right comes back
+    Given GNOME's own following pushes the view at its edges
+    And GNOME's zoomed view may go past the screen's edges
+    And zoom is off
+    And the pointer is at 1180, 400
+    When Super is held and the wheel turns 8 notches up
+    And the pointer moves 100 pixels right
+    And the pointer moves 100 pixels left
+    And Super is held and the wheel turns 12 notches down
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+    And zoom is off
+
   Scenario: With GNOME's view let past the screen's edges, zooming keeps it where the push left it
     Given GNOME's own following pushes the view at its edges
     And GNOME's zoomed view may go past the screen's edges
