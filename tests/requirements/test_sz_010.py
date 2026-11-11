@@ -29,10 +29,6 @@ VIEW_PORTS = {
 # The pointer's image in the test shell, across and down, at 1x. GNOME's push keeps the whole
 # of it, grown by the zoom, in the view.
 POINTER_IMAGE_PX = 24
-# As far as GNOME's push or Scroll Zoom's following takes the view past an edge of the screen
-# when GNOME lets it: the pointer's image, or the room following leaves around what it shows,
-# 24 pixels each.
-REACH_PX = 24
 SWIPE_STEP_PX = 10
 POINTER_STEP_PX = 10
 # About one frame at the test screen's 144 Hz, as a hand moves a mouse.
@@ -95,8 +91,8 @@ def kept_at(
 ) -> Point:
     """Where a pointer kept where it is is drawn at this zoom: where it was drawn, as near as
     keeps its whole image in the view, and the part of the screen the view shows within the
-    screen, or past its right and bottom edges as far as shows that image when GNOME lets the
-    view go past them."""
+    screen, or, when GNOME lets the view go past its edges, as far past them as it was when the
+    pointer was put there, and past the right and bottom as far as shows that image now."""
     kept: list[float] = []
     for axis in (0, 1):
         origin, size = view_port[axis], view_port[axis + 2]
@@ -140,21 +136,22 @@ def drawn_now(shell: Shell, view_port: Box) -> Point:
 
 def past_now(shell: Shell) -> tuple[Point, Point]:
     """How far past the screen's left and top edges, and its right and bottom edges, the view
-    is now, as far as GNOME's push or Scroll Zoom's following takes it."""
+    is now."""
     now = state(shell)
     if now["on"] is not True:
         return (0.0, 0.0), (0.0, 0.0)
+    left, top, width, height = view_box(now)
+    return (
+        (max(-left, 0.0), max(-top, 0.0)),
+        (max(left + width - SCREEN[0], 0.0), max(top + height - SCREEN[1], 0.0)),
+    )
+
+
+def view_box(now: dict[str, Json]) -> Box:
     roi = now["roi"]
     assert isinstance(roi, list)
     left, top, width, height = (number(value) for value in roi)
-
-    def reach(beyond: float) -> float:
-        return min(max(beyond, 0.0), REACH_PX)
-
-    return (
-        (reach(-left), reach(-top)),
-        (reach(left + width - SCREEN[0]), reach(top + height - SCREEN[1])),
-    )
+    return left, top, width, height
 
 
 def record(shell: Shell) -> None:
@@ -225,6 +222,19 @@ def focus_app_corner(shell: Shell, request: pytest.FixtureRequest) -> None:
 @given("the focus test app is open, moving its text cursor on its own")
 def focus_app_printing(shell: Shell, request: pytest.FixtureRequest) -> None:
     open_for_scenario(shell, request, "--print")
+
+
+@given(
+    parsers.parse(
+        "the focus test app is open in a window moved {pixels:d} pixels past the screen's left edge"
+    )
+)
+def app_window_past_left(shell: Shell, request: pytest.FixtureRequest, pixels: int) -> None:
+    open_for_scenario(shell, request, "--window")
+    # A window a person has dragged partly off the screen, as Mutter lets them.
+    window = "global.display.focus_window"
+    shell.call(f"{window}.move_frame(true, {-pixels}, 200); return true;")
+    shell.wait_until(f"{window}.get_frame_rect().x === {-pixels}")
 
 
 def open_for_scenario(shell: Shell, request: pytest.FixtureRequest, *args: str) -> None:
@@ -564,3 +574,15 @@ def kept_from_notch(scene: Scene, drawn: Drawn, tolerance: int) -> None:
         f"the pointer was drawn {worst:.1f} pixels from {bx:.0f}, {by:.0f}, where it was as the "
         f"notch came, over {len(after)} frames after it"
     )
+
+
+@then("the view is past the screen's left and top edges")
+def view_past_left_and_top(shell: Shell) -> None:
+    left, top, _, _ = view_box(state(shell))
+    assert left < 0 and top < 0, f"the view starts at {left:.1f}, {top:.1f}, within the screen"
+
+
+@then(parsers.parse("the view is past the screen's left edge by more than {pixels:d} pixels"))
+def view_far_past_left(shell: Shell, pixels: int) -> None:
+    left, _, _, _ = view_box(state(shell))
+    assert left < -pixels, f"the view starts {-left:.1f} pixels past the screen's left edge"

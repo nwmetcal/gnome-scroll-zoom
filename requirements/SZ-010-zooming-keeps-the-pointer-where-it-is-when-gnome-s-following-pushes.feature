@@ -40,13 +40,15 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
   Each scenario starts with GNOME's view at the screen's middle and its own following at rest;
   the toggle's under no following starts instead from zoom last on, at 2x around 400, 250.
 
-  With GNOME's Extend Outside Screen Edges on, the view may go past the screen's edges as far as
-  it was past them when the pointer was last put there, where GNOME's push takes it past the
-  right and bottom edges to show the pointer's whole image, and Scroll Zoom's following past any
-  edge to show what it follows with room around it, and past the right and bottom edges as far
-  as the pointer's whole image needs now, and no further: 24 pixels in the test shell. So as zoom
-  goes back toward 1x the view still grows back to fill the screen but for that, and zoom going
-  off moves the pointer by up to that much more than zoom going off from 1.01x moves it anyway.
+  With GNOME's Extend Outside Screen Edges on, the view may stay as far past the screen's edges
+  as it was when the pointer was last put there, however far that is: GNOME's push takes it past
+  the right and bottom edges to show the pointer's whole image, and Scroll Zoom's following past
+  any edge to show what it follows with room around it, even a control on a window partly off
+  the screen. It may also go past the right and bottom edges as far as the pointer's whole image
+  needs now, and no further. So as zoom goes back toward 1x the view still grows back to fill
+  the screen but for that, and zoom going off moves the pointer by up to that much more than
+  zoom going off from 1.01x moves it anyway, as GNOME's own toggle does with its view past the
+  edge. How far the view is past an edge is in the screen's own pixels, as at 1x.
 
   GNOME can show its zoomed view on half the screen instead (Magnifier View > Screen Area).
   There the view is that half: the pointer is drawn from the half's own corner, at its place in
@@ -312,7 +314,36 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
     When Super is held and the wheel turns 4 notches up
     And Tab moves keyboard focus to the middle button, and the view moves to show it
     And Shift+Tab moves keyboard focus back to the first button, and the view moves to show it
-    And Super is held and the wheel turns 1 notch up
+    Then the view is past the screen's left and top edges
+    When Super is held and the wheel turns 1 notch up
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: Zooming out after following takes the view past the screen's edges brings it back
+    Given GNOME's own following pushes the view at its edges
+    And GNOME's zoomed view may go past the screen's edges
+    And Scroll Zoom follows keyboard focus
+    And the focus test app is open with its first button in the screen's top-left corner
+    And zoom is off
+    And the pointer is at 300, 300
+    When Super is held and the wheel turns 4 notches up
+    And Tab moves keyboard focus to the middle button, and the view moves to show it
+    And Shift+Tab moves keyboard focus back to the first button, and the view moves to show it
+    Then the view is past the screen's left and top edges
+    When Super is held and the wheel turns 8 notches down
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+    And zoom is off
+
+  Scenario: After following a control on a window partly off the screen, zooming keeps the view
+    Given GNOME's own following pushes the view at its edges
+    And GNOME's zoomed view may go past the screen's edges
+    And Scroll Zoom follows keyboard focus
+    And the focus test app is open in a window moved 100 pixels past the screen's left edge
+    And zoom is off
+    And the pointer is at 400, 300
+    When Super is held and the wheel turns 4 notches up
+    And Shift+Tab moves keyboard focus back to the first button, and the view moves to show it
+    Then the view is past the screen's left edge by more than 24 pixels
+    When Super is held and the wheel turns 1 notch up
     Then every frame kept the pointer where it was on the screen, within 2 pixels
 
   Scenario: Following the text cursor within the view leaves where the pointer is kept as it was

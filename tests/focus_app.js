@@ -7,7 +7,9 @@
 // the view at 3x, as a terminal or an editor is, which Tab moves focus into from the first
 // button. With --corner the first button sits in the screen's top-left corner instead, as a
 // window's header bar buttons do, so following it takes the view past the screen's edges when
-// GNOME lets the view go past them.
+// GNOME lets the view go past them. With --window the app is a 640 by 420 window, not full
+// screen, with its first button in its own top-left corner and the middle button inside it and
+// focused, so a window moved partly off the screen puts the first button past the screen's edge.
 //
 // Run inside the test shell:  dev/test-shell.sh client gjs -m tests/focus_app.js
 import Gdk from 'gi://Gdk?version=4.0';
@@ -21,11 +23,14 @@ export const CORNER = {x: 4, y: 4, width: 120, height: 40};
 export const MIDDLE = {x: 700, y: 380, width: 120, height: 40};
 export const LINE = {x: 740, y: 560, width: 40, height: 24};
 export const AREA = {x: 100, y: 150, width: 1100, height: 600};
+export const WINDOW = {width: 640, height: 420};
+export const WINDOW_MIDDLE = {x: 300, y: 200, width: 120, height: 40};
 const PRINT_MS = 250;
 
 const printing = ARGV.includes('--print');
 const big = ARGV.includes('--big');
 const corner = ARGV.includes('--corner');
+const windowed = ARGV.includes('--window');
 const app = new Gtk.Application({application_id: 'dev.scrollzoom.Focus'});
 
 app.connect('activate', () => {
@@ -42,8 +47,10 @@ app.connect('activate', () => {
     const near = new Gtk.Button({label: 'Near'});
     const middle = new Gtk.Button({label: 'Middle'});
     const line = new Gtk.TextView({monospace: true, top_margin: 0, left_margin: 0});
-    place(near, corner ? CORNER : NEAR);
-    if (big) {
+    place(near, corner || windowed ? CORNER : NEAR);
+    if (windowed) {
+        place(middle, WINDOW_MIDDLE);
+    } else if (big) {
         const area = new Gtk.TextView({monospace: true});
         area.get_buffer().set_text(Array.from({length: 40},
             (_, i) => `line ${String(i + 1).padStart(2, '0')} of a page bigger than the view`)
@@ -55,6 +62,12 @@ app.connect('activate', () => {
     }
 
     const window = new Gtk.ApplicationWindow({application: app, title: TITLE, child: fixed});
+    if (windowed) {
+        window.set_default_size(WINDOW.width, WINDOW.height);
+        window.present();
+        middle.grab_focus();
+        return;
+    }
     window.fullscreen();
     window.present();
 

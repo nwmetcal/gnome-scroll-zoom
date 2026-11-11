@@ -118,11 +118,13 @@ def wheel_steps(
 
 
 def open_focus_app(shell: Shell, *args: str) -> None:
-    """Open the focus test app full screen, and wait until it has focus and is ready."""
+    """Open the focus test app, full screen unless it is asked for a window, and wait until it
+    has focus and is ready."""
     shell.client("gjs", "-m", str(FOCUS_APP), *args)
+    shown = "true" if "--window" in args else "a.meta_window.is_fullscreen()"
     shell.wait_until(
         "global.get_window_actors().some(a => a.meta_window.get_title() === "
-        f"'{FOCUS_APP_TITLE}' && a.meta_window.is_fullscreen())",
+        f"'{FOCUS_APP_TITLE}' && {shown})",
         timeout_s=20,
     )
     shell.wait_until(f"global.display.focus_window?.get_title() === '{FOCUS_APP_TITLE}'")
