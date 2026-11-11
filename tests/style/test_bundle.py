@@ -15,6 +15,7 @@ from datetime import date
 from functools import cache
 from pathlib import Path
 from typing import cast
+from urllib.parse import urlsplit
 
 from tests.paths import EXTENSION, ROOT
 
@@ -49,7 +50,8 @@ DONATIONS = {
     "patreon",
     "paypal",
 }
-# The older importer's modules the guidelines refuse, and the call they refuse.
+# The review guidelines refuse these older modules, which gjs keeps only as deprecated, and
+# this call, which disposes of an object other code may still hold.
 DEPRECATED = {"imports.byteArray", "imports.lang", "imports.mainloop"}
 DISPOSE = "run_dispose"
 SHELL_ONLY = {"Clutter", "Meta", "St", "Shell"}
@@ -168,7 +170,7 @@ def loaded(entry: str, source: Callable[[str], str] = extension_file) -> list[st
             continue
         seen.append(name)
         folder = posixpath.dirname(name)
-        imports = [path for _, path in whole(source(name)).imports if path.startswith("./")]
+        imports = [p for _, p in whole(source(name)).imports if p.startswith(("./", "../"))]
         pending += [posixpath.normpath(posixpath.join(folder, path)) for path in imports]
     return seen
 
@@ -187,8 +189,10 @@ def libraries(text: str) -> set[str]:
     gjs's parser reads them."""
     found: set[str] = set()
     for _, path in whole(text).imports:
-        if path.startswith("gi://"):
-            found.add(path.removeprefix("gi://").split("?")[0])
+        # gjs reads a gi:// specifier as a URI and loads its host, whatever follows it.
+        url = urlsplit(path)
+        if url.scheme.lower() == "gi" and url.netloc:
+            found.add(url.netloc)
         elif path.startswith("imports.gi."):
             found.add(path.split(".")[2])
     return found
