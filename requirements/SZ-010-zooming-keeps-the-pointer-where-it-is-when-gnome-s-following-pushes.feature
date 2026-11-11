@@ -378,6 +378,46 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
     And Super is held and the wheel turns 8 notches down
     Then every frame kept the pointer where it was on the screen, within 2 pixels
 
+  Scenario: After following moves the view only up, zooming keeps the pointer where it is drawn
+    Given GNOME's own following pushes the view at its edges
+    And Scroll Zoom follows keyboard focus
+    And the focus test app is open in a window at 400, 123
+    And zoom is off
+    And the pointer is at 640, 400
+    When Super is held and the wheel turns 4 notches up
+    And Shift+Tab moves keyboard focus back to the first button, and the view moves to show it
+    Then following moved the view only up or down
+    When Super is held and the wheel turns 1 notch up
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: After GNOME holds following's view at the screen's corner, zooming keeps the pointer
+    Given GNOME's own following pushes the view at its edges
+    And Scroll Zoom follows keyboard focus
+    And the focus test app is open with its first button in the screen's top-left corner
+    And zoom is off
+    And the pointer is at 300, 250
+    When Super is held and the wheel turns 4 notches up
+    And Tab moves keyboard focus to the middle button, and the view moves to show it
+    And Super is held and the wheel turns 1 notch up
+    And Shift+Tab moves keyboard focus back to the first button, and the view moves to show it
+    Then the view is at the screen's top-left corner
+    When Super is held and the wheel turns 1 notch up
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: After following a control past the screen's bottom edge, zooming keeps the view there
+    Given GNOME's own following pushes the view at its edges
+    And GNOME's zoomed view may go past the screen's edges
+    And Scroll Zoom follows keyboard focus
+    And the focus test app is open in a window at 300, 580
+    And zoom is off
+    And the pointer is at 700, 700
+    When Super is held and the wheel turns 4 notches up
+    And Shift+Tab moves keyboard focus back to the first button, and the view moves to show it
+    And Tab moves keyboard focus to the middle button, and the view moves to show it
+    Then the view is past the screen's bottom edge by more than 24 pixels
+    When Super is held and the wheel turns 1 notch up
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
   Scenario: After following a control on a window partly off the screen, zooming keeps the view
     Given GNOME's own following pushes the view at its edges
     And GNOME's zoomed view may go past the screen's edges

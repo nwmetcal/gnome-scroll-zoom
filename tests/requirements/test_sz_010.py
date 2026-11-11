@@ -250,6 +250,11 @@ def app_window_past_right(shell: Shell, request: pytest.FixtureRequest, x: int, 
     open_in_window_at(shell, request, x, y)
 
 
+@given(parsers.parse("the focus test app is open in a window at {x:d}, {y:d}"))
+def app_window_at(shell: Shell, request: pytest.FixtureRequest, x: int, y: int) -> None:
+    open_in_window_at(shell, request, x, y)
+
+
 def open_in_window_at(shell: Shell, request: pytest.FixtureRequest, x: int, y: int) -> None:
     open_for_scenario(shell, request, "--window")
     # A window a person has dragged partly off the screen, as Mutter lets them.
@@ -309,6 +314,7 @@ def shift_tab_unfollowed(shell: Shell) -> None:
 
 
 def focus_and_follow(shell: Shell, drawn: Drawn, keys: list[list[Json]]) -> None:
+    drawn.view_before = point(state(shell)["roi"])
     view = "Main.magnifier.getZoomRegions()[0].getROI().join()"
     shell.call(f"globalThis.viewBeforeTab = {view}; return true;")
     shell.run_steps(keys)
@@ -638,3 +644,25 @@ def view_far_past_right(shell: Shell, pixels: int) -> None:
     left, _, width, _ = view_box(state(shell))
     beyond = left + width - SCREEN[0]
     assert beyond > pixels, f"the view ends {beyond:.1f} pixels past the screen's right edge"
+
+
+@then(parsers.parse("the view is past the screen's bottom edge by more than {pixels:d} pixels"))
+def view_far_past_bottom(shell: Shell, pixels: int) -> None:
+    _, top, _, height = view_box(state(shell))
+    beyond = top + height - SCREEN[1]
+    assert beyond > pixels, f"the view ends {beyond:.1f} pixels past the screen's bottom edge"
+
+
+@then("following moved the view only up or down")
+def moved_up_or_down(shell: Shell, drawn: Drawn) -> None:
+    left, top, _, _ = view_box(state(shell))
+    assert abs(left - drawn.view_before[0]) < 0.5 and abs(top - drawn.view_before[1]) >= 0.5, (
+        f"the view went from {drawn.view_before[0]:.1f}, {drawn.view_before[1]:.1f} to "
+        f"{left:.1f}, {top:.1f}"
+    )
+
+
+@then("the view is at the screen's top-left corner")
+def view_at_corner(shell: Shell) -> None:
+    left, top, _, _ = view_box(state(shell))
+    assert abs(left) < 0.5 and abs(top) < 0.5, f"the view starts at {left:.1f}, {top:.1f}"
