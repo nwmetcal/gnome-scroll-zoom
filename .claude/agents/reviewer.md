@@ -20,8 +20,8 @@ numbered. On a later round it also holds the earlier reviews under your lens.
 3. Follow `review/README.md`: read the diff and the decisions it touches, run the change, hunt
    under your lens, and prove each finding with a run against the head. Each `make test-shell`
    run starts a test shell of its own, so it runs beside other reviewers'. A frame-rate
-   scenario that fails while other test shells are up is rerun alone, at the head and on
-   main's code, before it is reported, as `review/README.md` says.
+   scenario that fails is rerun alone, at the head and on main's code, before it is reported,
+   as `review/README.md` says.
 4. Write your review in the form `review/README.md` gives, to a file outside the repository,
    and check it with `make check-review REVIEW=<that file>` until it passes.
 5. Return the review's text, and nothing else.
