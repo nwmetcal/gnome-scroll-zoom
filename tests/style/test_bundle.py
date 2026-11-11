@@ -351,15 +351,20 @@ def family(name: str, string: bool = False) -> str | None:
 
 def reached(reads: list[Read]) -> frozenset[str]:
     """The functions disable() reaches, by name, across the files read: each one a function it
-    reaches calls, or names, as a callback is named. A name reaches every function of that
-    name, in any class, since which object a call lands on is not read."""
+    reaches calls, or names as a value, as a callback is named; a name it sets, declares, or
+    holds in a string reaches nothing, since none of those runs it. A name reaches every
+    function of that name, in any class, since which object a call lands on is not read."""
     found = {"disable"}
     pending = ["disable"]
     while pending:
         within = pending.pop()
         for read in reads:
             called = {c.name for c in read.calls if c.within == within and c.name}
-            named = {name for _, name, site, w in read.names if w == within and site != "key"}
+            named = {
+                name
+                for _, name, site, w in read.names
+                if w == within and site not in ("key", "declared", "assigned", "string")
+            }
             for name in sorted((called | named) - found):
                 found.add(name)
                 pending.append(name)
@@ -427,7 +432,8 @@ def undone(text: str, read: Read, reach: frozenset[str] | None = None) -> list[s
             elif (c.receiver, "ungrab_accelerator", c.kept) not in undos:
                 found.append(f"{c.receiver} never ungrabs {c.kept}")
     if reach is not None:
-        # Undone somewhere in the file, but not where disable() reaches: say which.
+        # An undo the file holds where disable() does not reach runs at some other time, if
+        # ever, so the finding says where it was looked for.
         anywhere = set(undone(text, read))
         found = [f if f in anywhere else f"in what disable() reaches, {f}" for f in found]
     # A name that starts with an underscore is a private member: the extension's own, whose

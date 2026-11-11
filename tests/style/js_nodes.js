@@ -13,9 +13,10 @@
 //     what the call's result is assigned to, if anything. use says how a
 //     global.compositor.get_laters() call is used: hold, add, remove, or null.
 //   names: every place a name stands, as [line, name, site, within]: site is the index of the
-//     call it names, declared for the name a const, let, or var declares, key for a class
-//     method's own name, string for a string that holds a name alone, or other. A dynamic
-//     import stands as the name import().
+//     call it names, a string's name included, as obj['name'](), declared for the name a
+//     const, let, or var declares, key for a class method's own name, assigned for a name or
+//     a member an assignment sets, string for any other string that holds a name alone, or
+//     other. A dynamic import stands as the name import().
 //   within, for a call or a name: the name of the function it stands in, by which a call can
 //     reach it: a class's method or field, a declared function, or a function kept in a name,
 //     a member, or an object's key. An unnamed function, such as a callback, is part of the
@@ -211,20 +212,26 @@ function read(ast) {
         if (node.type === 'CallImport')
             names.push([line, 'import()', 'other', within]);
         const site = node.called === true ? node.call : 'other';
+        const assigned = parent?.type === 'AssignmentExpression' && key === 'left';
         if (node.type === 'Identifier') {
             let where = site;
             if (parent?.type === 'VariableDeclarator' && key === 'id')
                 where = 'declared';
             else if (parent?.type === 'ClassMethod' && key === 'name')
                 where = 'key';
+            else if (assigned)
+                where = 'assigned';
             names.push([line, node.name, where, within]);
         }
         if (isMember(node) && !node.computed)
-            names.push([line, node.property.name, site, within]);
+            names.push([line, node.property.name, assigned ? 'assigned' : site, within]);
         // A string that holds a name alone, as obj['name'], a key, or Reflect.get(obj, 'name').
         if (node.type === 'Literal' && typeof node.value === 'string' &&
-            /^[A-Za-z_$][\w$]*$/.test(node.value))
-            names.push([line, node.value, 'string', within]);
+            /^[A-Za-z_$][\w$]*$/.test(node.value)) {
+            const called = isMember(parent) && parent.computed && key === 'property' &&
+                parent.called === true;
+            names.push([line, node.value, called ? parent.call : 'string', within]);
+        }
         for (const [childKey, child] of children(node)) {
             // A member's property name is read above, with the member; every key is walked,
             // a computed one as code.
