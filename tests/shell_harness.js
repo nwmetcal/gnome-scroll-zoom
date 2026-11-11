@@ -180,9 +180,10 @@
             return true;
         },
 
-        // A known starting point: zoom off, GNOME's level at 2x, its view's middle at the
-        // screen's middle with its following at rest, GNOME's following of focus and the
-        // text cursor at its defaults, and the extension at its defaults.
+        // A known starting point: zoom off, GNOME's level at 2x, its view on the whole screen
+        // and held within it, its view's middle at the screen's middle with its following at
+        // rest, GNOME's following of focus and the text cursor at its defaults, and the
+        // extension at its defaults.
         reset() {
             if (this._paintId)
                 this.stopRecording();

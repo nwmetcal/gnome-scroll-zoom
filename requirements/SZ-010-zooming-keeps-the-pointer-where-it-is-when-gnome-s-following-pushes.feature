@@ -13,23 +13,24 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
   The pointer is drawn where the zoomed view shows the point it is on: its place in the view
   times the zoom. With zoom off it is drawn where it is. GNOME's push keeps the whole of the
   pointer's image in the view, and that image, 24 pixels across and down in the test shell,
-  grows with the zoom. So a pointer kept where it is stays where it was drawn before the zoom
-  began, or as near to it as keeps its whole image on the screen and, unless GNOME lets its view
-  go past the screen's edges, the view within the screen: no further right than the screen's
-  width less 24 pixels times the zoom, no further down than its height less the same, and, as
-  zoom goes back toward 1x and the view grows to fill the screen, back toward where the pointer
-  itself is. Past 6.25x the pointer at 1100, 650 has less room than that below it, and past 7.5x
-  to its right. Kept so, the view stays still as the pointer then moves within it, and a spin
-  that zooms in deep and turns back brings the pointer back as the room comes back, even past
-  the maximum zoom, where the zoom stops while the spin goes on. A zoom that GNOME's level
+  grows with the zoom. So a pointer kept where it is stays where it was drawn when it was last
+  put there, by moving or as zoom came on, or as near to it as keeps its whole image on the
+  screen and the view within the screen: no further right than the screen's width less 24 pixels
+  times the zoom, no further down than its height less the same, and, as zoom goes back toward
+  1x and the view grows to fill the screen, back toward where the pointer itself is. Past 6.25x
+  the pointer at 1100, 650 has less room than that below it, and past 7.5x to its right. Kept
+  so, the view stays still as the pointer then moves within it, and where the pointer is drawn
+  depends only on where it was put and the zoom, however the zoom got there. A later zoom
+  without a move, and a spin that zooms in deep and turns back, bring the pointer back as the
+  room comes back, even past the maximum zoom, where the zoom stops while the spin goes on, and
+  after a rest there, of the wheel or of fingers on the touchpad. A zoom that GNOME's level
   started, by its keyboard zoom or its slider, goes GNOME's way, and a wheel notch during it
   keeps the pointer where it is drawn as the notch comes, within 4 pixels, since GNOME's glide
-  still moves it a little in the frames before the notch takes hold. The pointer itself does not
-  move. Most of these scenarios zoom with the pointer at 1100, 650, far from the screen's
-  middle, where GNOME's push left the pointer drawn 108 pixels right of and 78 pixels below
-  where it was once zoom reached 3x. "Within 2 pixels" allows for the rounding of where the view
-  sits, and a view staying where it was on the screen is measured times the zoom, as the screen
-  shows it.
+  can still move it in the frame before the notch takes hold. The pointer itself does not move.
+  Most of these scenarios zoom with the pointer at 1100, 650, far from the screen's middle,
+  where GNOME's push left the pointer drawn 108 pixels right of and 78 pixels below where it was
+  once zoom reached 3x. "Within 2 pixels" allows for the rounding of where the view sits, and a
+  view staying where it was on the screen is measured times the zoom, as the screen shows it.
 
   Under GNOME's following that moves with the contents, the view sits where GNOME Shell 50's
   own magnifier puts it for the pointer's place on the screen. Under no following, the view's
@@ -38,8 +39,10 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
   Each scenario starts with GNOME's view at the screen's middle and its own following at rest;
   the toggle's under no following starts instead from zoom last on, at 2x around 400, 250.
 
-  With GNOME's Extend Outside Screen Edges on, GNOME lets the view reach past the screen's
-  right and bottom edges, so near them the pointer's whole image is kept in the view there.
+  With GNOME's Extend Outside Screen Edges on, the view may go past the screen's right and
+  bottom edges as far as GNOME's push takes it to show the pointer's whole image there, and no
+  further, so as zoom goes back toward 1x the view still grows back to fill the screen, and
+  zoom going off moves nothing.
 
   GNOME can show its zoomed view on half the screen instead (Magnifier View > Screen Area).
   There the view is that half: the pointer is drawn from the half's own corner, at its place in
@@ -210,6 +213,32 @@ Feature: SZ-010 Zooming keeps the pointer where it is when GNOME's following pus
     Then every frame kept the pointer where it was on the screen, within 2 pixels
     When the pointer moves 10 pixels left
     Then the view stayed where it was on the screen as the pointer moved, within 2 pixels
+
+  Scenario: A spin that rests at the maximum zoom and turns back brings the pointer back
+    Given GNOME's own following pushes the view at its edges
+    And zoom is off
+    And the pointer is at 1100, 650
+    When Super is held and the wheel turns 26 notches up, rests 1000 ms, and turns 6 down
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: Fingers resting on the touchpad at the maximum zoom, then swiping back, bring it back
+    Given GNOME's own following pushes the view at its edges
+    And zoom is off
+    And the pointer is at 1100, 650
+    When Super is held and two fingers swipe 400 pixels up, then 120 back after resting 1000 ms
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+
+  Scenario: With GNOME's view let past the screen's edges, zooming out brings it back to the screen
+    Given GNOME's own following pushes the view at its edges
+    And GNOME's zoomed view may go past the screen's edges
+    And zoom is off
+    And the pointer is at 100, 400
+    When Super is held and the wheel turns 8 notches up
+    And the pointer moves 100 pixels left
+    And the pointer moves 100 pixels right
+    And Super is held and the wheel turns 12 notches down
+    Then every frame kept the pointer where it was on the screen, within 2 pixels
+    And zoom is off
 
   Scenario: A wheel notch during a zoom GNOME's level started keeps the pointer where it is
     Given GNOME's own following pushes the view at its edges

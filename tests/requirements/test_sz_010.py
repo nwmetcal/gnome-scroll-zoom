@@ -86,8 +86,8 @@ def kept_at(
         origin, size = view_port[axis], view_port[axis + 2]
         place = min(max(before[axis], origin), origin + size - POINTER_IMAGE_PX * zoom)
         start = pointer[axis] - (place - origin) / zoom
-        if within_screen:
-            start = min(max(start, 0.0), SCREEN[axis] - size / zoom)
+        past = 0.0 if within_screen else max(pointer[axis] + POINTER_IMAGE_PX - SCREEN[axis], 0.0)
+        start = min(max(start, 0.0), SCREEN[axis] - size / zoom + past)
         kept.append(origin + (pointer[axis] - start) * zoom)
     return kept[0], kept[1]
 
@@ -179,13 +179,23 @@ def pointer_at(shell: Shell, drawn: Drawn, x: int, y: int) -> None:
 
 @when(parsers.parse("the pointer moves {pixels:d} pixels left"))
 def pointer_left(shell: Shell, scene: Scene, drawn: Drawn, pixels: int) -> None:
+    move_pointer(shell, scene, drawn, -pixels)
+
+
+@when(parsers.parse("the pointer moves {pixels:d} pixels right"))
+def pointer_right(shell: Shell, scene: Scene, drawn: Drawn, pixels: int) -> None:
+    move_pointer(shell, scene, drawn, pixels)
+
+
+def move_pointer(shell: Shell, scene: Scene, drawn: Drawn, across_px: int) -> None:
     now = state(shell)
     drawn.view_before = point(now["roi"])
     x, y = point(now["pointer"])
     record(shell)
+    way = 1 if across_px > 0 else -1
     steps = [
-        step(POINTER_STEP_MS, "moveTo", x - POINTER_STEP_PX * (i + 1), y)
-        for i in range(pixels // POINTER_STEP_PX)
+        step(POINTER_STEP_MS, "moveTo", x + way * POINTER_STEP_PX * (i + 1), y)
+        for i in range(abs(across_px) // POINTER_STEP_PX)
     ]
     shell.run_steps(steps)
     time.sleep(0.2)
@@ -208,6 +218,45 @@ def spin_and_back(shell: Shell, scene: Scene, up: int, down: int) -> None:
     shell.run_steps(steps, timeout_s=30)
     time.sleep(0.2)
     shell.settle()
+    recorded(shell, scene)
+
+
+@when(
+    parsers.parse(
+        "Super is held and the wheel turns {up:d} notches up, rests {rest_ms:d} ms, and turns "
+        "{down:d} down"
+    )
+)
+def spin_rest_and_back(shell: Shell, scene: Scene, up: int, rest_ms: int, down: int) -> None:
+    record(shell)
+    steps: list[list[Json]] = [step(20, "press", "super")]
+    steps += [step(QUICK_GAP_MS, "notch", 1) for _ in range(up)]
+    steps += [step(rest_ms if i == 0 else QUICK_GAP_MS, "notch", -1) for i in range(down)]
+    steps += [step(20, "release", "super")]
+    shell.run_steps(steps, timeout_s=30)
+    time.sleep(0.2)
+    shell.settle()
+    recorded(shell, scene)
+
+
+@when(
+    parsers.parse(
+        "Super is held and two fingers swipe {up:d} pixels up, then {back:d} back after resting "
+        "{rest_ms:d} ms"
+    )
+)
+def swipe_rest_and_back(shell: Shell, scene: Scene, up: int, rest_ms: int, back: int) -> None:
+    record(shell)
+    steps: list[list[Json]] = [step(20, "press", "super")]
+    steps += [step(15, "swipe", -SWIPE_STEP_PX) for _ in range(up // SWIPE_STEP_PX)]
+    steps += [
+        step(rest_ms if i == 0 else 15, "swipe", SWIPE_STEP_PX)
+        for i in range(back // SWIPE_STEP_PX)
+    ]
+    steps += [step(15, "lift"), step(20, "release", "super")]
+    shell.run_steps(steps, timeout_s=30)
+    time.sleep(0.2)
+    shell.settle(timeout_s=10)
     recorded(shell, scene)
 
 
@@ -237,7 +286,7 @@ def swipe_and_back(shell: Shell, scene: Scene, up: int, back: int) -> None:
 def level_then_notch(shell: Shell, scene: Scene, zoom: float, delay_ms: int) -> None:
     # GNOME's keyboard zoom and its slider set this level; the test shell runs no settings
     # daemon. The mark, just before the notch, tells the frames drawn before the notch came
-    # from those after it, as GNOME's glide still moves the pointer until then.
+    # from those after it, as GNOME's glide moves the pointer until the notch takes hold.
     record(shell)
     shell.call(f"{MAGNIFIER}.set_double('mag-factor', {zoom}); return true;")
     steps = [step(delay_ms, "press", "super"), step(20, "mark"), step(1, "notch", 1)]
@@ -334,8 +383,6 @@ def pointer_kept(shell: Shell, scene: Scene, drawn: Drawn, tolerance: int) -> No
         f"the pointer was drawn {worst:.1f} pixels from where it was kept from {bx:.0f}, "
         f"{by:.0f}, over {len(scene.frames)} frames and where it rests at the end"
     )
-    # The next zoom in the scenario starts from here.
-    drawn.before = drawn_now(shell, drawn.view_port)
 
 
 @then(
