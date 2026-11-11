@@ -3,12 +3,14 @@
 
 import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from tests.conftest import shell_log_line
-from tests.paths import BUILD
+from tests.paths import BUILD, ROOT
 from tests.shell import Shell, ShellError, new_root
 
 CAUSE = "FAKE-CAUSE: no render node for the test shell"
@@ -54,3 +56,23 @@ def test_a_failed_run_says_where_the_shell_log_is() -> None:
     assert line is not None and line.endswith("build/shots/scroll-zoom-shell-x/shell.log"), line
     assert shell_log_line(log, failed=False) is None
     assert shell_log_line(None, failed=True) is None
+
+
+def test_a_failed_run_ends_by_naming_the_shell_log(tmp_path: Path) -> None:
+    log = tmp_path / "shots" / "scroll-zoom-shell-x" / "shell.log"
+    (tmp_path / "conftest.py").write_text(
+        "from pathlib import Path\n"
+        "from tests.conftest import *\n"
+        f"def pytest_configure(config):\n    config.stash[SHELL_LOG] = Path({str(log)!r})\n"
+    )
+    (tmp_path / "test_x.py").write_text("def test_x():\n    assert False\n")
+    run = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-rA", str(tmp_path)],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True,
+        text=True,
+    )
+    lines = [line for line in run.stdout.splitlines() if line.strip()]
+    assert run.returncode == 1, run.stdout
+    assert lines[-1].endswith(str(log)), lines[-3:]
